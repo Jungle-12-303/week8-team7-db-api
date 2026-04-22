@@ -1,118 +1,94 @@
 # 루트 작업 운영 규칙
 
 ## 목적
-- 루트 `PLAN.md`를 공통 요구사항, 공통 아키텍처, 공통 API 명세의 원본으로 유지한다.
-- 이 문서는 작업 절차, 문서 운영 방식, 소유권 경계, 기록 규칙을 정의한다.
-- 루트는 직접 세부 기능을 구현하는 곳이 아니라 공통 기준 관리와 통합 조정을 담당한다.
+- 루트 `PLAN.md`를 공통 요구사항, 아키텍처, API 계약, 빌드/실행 기준의 기준 문서로 유지한다.
+- 루트 `agent.md`는 루트 문서 운영 규칙, 소유 범위, 검증 기준, 마무리 기준을 정의한다.
+- 루트는 직접 세부 기능을 구현하는 곳이 아니라 공통 계약 관리, 통합 조정, Docker/빌드 경로 관리, 최종 정리를 담당한다.
 
-## 문서 역할
-| 파일 | 역할 |
-| --- | --- |
-| `PLAN.md` | 공통 요구사항, 공통 아키텍처, 공통 API 명세 원본 |
-| `agent.md` | 루트 작업 규칙, 문서 운영 규칙, 에스컬레이션 규칙 |
-| `context.md` | 프로젝트 전체 요약, 주요 결정 사항, 핸드오프 메모 |
-| `work.md` | 루트 진행 현황, 통합 상태, 업데이트 필요 항목 |
-| `error.md` | 공통 블로커, 통합 이슈, 해결된 공용 문제 |
-| `commit-rules.md` | 커밋 메시지 작성 규칙 |
-| `.codex/` | 원본 로그와 세션 기록 보관 |
+## 루트 소유 범위
+- 공통 문서
+  - `PLAN.md`
+  - `agent.md`
+  - `context.md`
+  - `work.md`
+  - `error.md`
+  - `commit-rules.md`
+- 루트 공용 실행 파일
+  - `Dockerfile`
+  - `compose.yaml`
+  - `.dockerignore`
+  - `Makefile`
+- 루트 바로 아래 작업 디렉터리
+  - `week8-team7-db-api`
+  - `SERVER-CORE`
+  - `SERVER-HTTP`
+  - `SERVER-CONCURRENCY`
+  - `SERVER-RUNTIME`
+  - `TEST-ENGINE-ADAPTER`
+  - `TEST-HTTP-FUNCTIONAL`
+  - `TEST-CONCURRENCY`
+  - `TEST-EDGE-FAILURE`
 
-## 작업 시작 순서
+## 문서 확인 순서
 1. 루트 `PLAN.md`
 2. 루트 `agent.md`
 3. 루트 `context.md`
 4. 루트 `work.md`
 5. 루트 `error.md`
-6. 현재 폴더 `agent.md`, `context.md`, `work.md`, `error.md`
-7. 필요할 때만 현재 폴더 `.codex/`
-
-- 현재 폴더가 루트라면 루트 문서까지 읽고 바로 작업 범위를 결정한다.
-- 하위 폴더에서 작업하더라도 공통 기준은 항상 루트 `PLAN.md`와 루트 `agent.md`를 먼저 따른다.
+6. 현재 작업 디렉터리의 `agent.md`, `context.md`, `work.md`, `error.md`
+7. 필요할 때만 현재 작업 디렉터리 `.codex/`
 
 ## 문서 우선순위
 1. 루트 `PLAN.md`
 2. 루트 `agent.md`
-3. 현재 폴더 `agent.md`
-4. `skills/multi-agent-collaboration/SKILL.md`
-5. 현재 폴더 `work.md`, `error.md`, `context.md`
-6. 현재 폴더 `.codex/`
+3. 현재 작업 디렉터리 `agent.md`
+4. 현재 작업 디렉터리 `context.md`, `work.md`, `error.md`
+5. 현재 작업 디렉터리 `.codex/`
 
-- 하위 문서가 상위 문서와 충돌하면 상위 문서를 우선한다.
-- 공통 계약을 바꿔야 하면 로컬 문서를 먼저 고치지 말고 루트 `PLAN.md` 또는 루트 `agent.md`를 먼저 조정한다.
+- 하위 문서가 루트 계약과 충돌하면 루트 문서를 우선한다.
+- 공통 API, Docker 실행 방식, 루트 소유 파일, 테스트 계약이 바뀌면 먼저 루트 `PLAN.md` 또는 루트 `agent.md`를 갱신한다.
 
 ## 루트 역할
-- 공통 요구사항, 공통 아키텍처, 공통 API 명세 관리
-- 공용 파일 소유
-- 하위 폴더 진행 상황 취합
-- 폴더 간 의존성 조정
-- 최종 연결 작업과 마무리
+- 공통 API 계약 관리
+- 공통 아키텍처와 디렉터리 책임 경계 관리
+- Docker/빌드/실행 경로 관리
+- 하위 디렉터리 진행 현황 취합
+- 테스트 계약 정렬 상태 점검
+- 최종 마무리와 루트 문서 최신화
 
-## 하위 폴더 역할
-- 자기 범위의 구현과 검토
-- 로컬 `work.md`, `error.md`, `context.md` 기록
-- 루트 문서를 기준으로 로컬 범위만 상세화
+## 하위 디렉터리 역할
+- 자기 범위 코드 구현과 로컬 테스트
+- 로컬 `work.md`, `error.md`, `context.md` 업데이트
+- 루트 계약을 기준으로 세부 문서 보강
 
-## 하위 폴더 문서 규칙
-- 하위 폴더에는 루트 `PLAN.md`를 복사하지 않는다.
-- 각 하위 폴더 `agent.md`에는 아래 섹션을 공통으로 둔다.
-  - 목적
-  - 문서 우선순위
-  - 공통 문서 및 스킬 참조
-  - 담당 범위
-  - 범위 제외
-  - 인터페이스
-  - 소유 경로
-  - 의존성
-  - 완료 조건
-  - 테스트 기준
-- 하위 폴더 공통 파일은 아래를 기본으로 둔다.
-  - `agent.md`
-  - `context.md`
-  - `work.md`
-  - `error.md`
-  - `.codex/history.jsonl`
-  - `.codex/sessions/`
+## 변경 규칙
+- 루트 소유 파일은 공통 계약, 실행 경로, 문서 체계가 바뀌는 경우에만 수정한다.
+- 다른 디렉터리 소유 파일은 해당 범위 작업이 아니면 건드리지 않는다.
+- 하위 구현이 루트 계약과 어긋나면 먼저 루트 문서와 실제 코드 중 어느 쪽을 기준으로 정리할지 판단하고, 결정이 끝난 뒤 양쪽을 맞춘다.
 
-## 기록 규칙
-- `context.md`
-  - 요약과 핸드오프만 기록한다.
-  - 긴 원본 로그는 넣지 않는다.
-- `.codex/`
-  - 원본 로그와 세션 기록을 저장한다.
-- `work.md`
-  - 루트는 `진행중`, `업데이트 필요`, `완료` 섹션을 유지한다.
-  - 하위 폴더는 로컬 작업 진행과 영향 범위를 기록한다.
-- `error.md`
-  - 루트는 공통 이슈와 해결된 공용 문제를 기록한다.
-  - 하위 폴더는 리뷰 결과와 로컬 블로커를 기록한다.
+## 검증 기준
+- API 계약 변경 시:
+  - `TEST-HTTP-FUNCTIONAL` 케이스와 현재 응답 스키마 일치 여부 확인
+  - `/health`, `/query` smoke test 확인
+- 서버 런타임/빌드 변경 시:
+  - `docker compose up -d server`
+  - `docker compose exec server curl --fail --silent --show-error http://127.0.0.1:8080/health`
+  - `docker compose exec server bash -lc "curl --fail --silent --show-error -H 'Content-Type: text/plain; charset=utf-8' --data 'SELECT name FROM student WHERE id = 1;' http://127.0.0.1:8080/query"`
+- 엔진/어댑터 경계 변경 시:
+  - `powershell -ExecutionPolicy Bypass -File TEST-ENGINE-ADAPTER\scripts\run_adapter_contract_tests.ps1`
+- HTTP 기능 케이스 변경 시:
+  - `powershell -ExecutionPolicy Bypass -File TEST-HTTP-FUNCTIONAL\scripts\run-http-functional-tests.ps1 -ValidateOnly`
+- 동시성 케이스 또는 시연 경로 변경 시:
+  - `python TEST-CONCURRENCY\scripts\run_concurrency_case.py --self-test`
+  - 필요 시 `docker compose run --rm dev bash -lc "python3 TEST-CONCURRENCY/scripts/run_concurrency_case.py ... --base-url http://server:8080 --timeout 15"`
 
-## 페르소나 기반 검증 규칙
-- 코드, 계약, 빌드, 테스트, 문서 구조에 의미 있는 변경이 생기면 페르소나 관점 검증을 수행한다.
-- 기본 검증 페르소나는 아래를 사용한다.
-  - 정확성: 요구사항과 구현 결과가 일치하는지 확인
-  - 동시성/안정성: race, deadlock, 자원 누수, 종료 처리 위험을 확인
-  - API/계약: 프로토콜, 응답 형식, 인터페이스 호환성을 확인
-  - 테스트/회귀: 기존 테스트 유지와 신규 검증 누락 여부를 확인
-  - 운영/빌드: Docker, Makefile, 실행 절차, 개발 환경 재현성을 확인
-- 검증 결과는 아래 우선순위로 정리한다.
-  - `Critical`: 즉시 수정이 필요한 문제
-  - `Major`: 구현은 가능하지만 수정이 권장되는 문제
-- 공통 이슈는 루트 `error.md`, 폴더 로컬 이슈는 해당 폴더 `error.md`에 남긴다.
-- 검증 후 작업을 마칠 때는 필요한 후속 수정이나 업데이트 필요 항목을 `work.md`에 반영한다.
+## 이슈 기록 규칙
+- 공통 이슈는 루트 `error.md`에 기록한다.
+- 특정 디렉터리 구현/테스트 이슈는 해당 디렉터리 `error.md`에 기록한다.
+- 후속 작업이 필요한 사항은 해당 범위 `work.md`에 남긴다.
 
-## 변경 및 에스컬레이션 규칙
-- 공통 아키텍처, 공통 API, 프로토콜, 빌드 규칙 변경이 필요하면 루트 문서부터 갱신한다.
-- 다른 폴더 소유 파일은 명시적 지시나 통합 작업이 아니면 수정하지 않는다.
-- 소유권이 애매하면 먼저 `error.md` 또는 `work.md`에 메모하고 조정한다.
-- 루트 소유 파일(`PLAN.md`, `agent.md`, `context.md`, `work.md`, `error.md`, `commit-rules.md`, `Dockerfile`, `docker-compose.yml`, `.dockerignore`, `Makefile`)은 루트 기준으로 관리한다.
-
-## 커밋 및 검증
-- 커밋 메시지는 `commit-rules.md`를 따른다.
-- 커밋 전에는 정확성, 범위 준수, 테스트 상태를 확인한다.
-- 문서 작업이라도 참조 경로, 문서 우선순위, 용어 일관성을 검토한다.
-- 의미 있는 변경 후에는 페르소나 기반 검증 결과를 확인하고 `Critical` 또는 `Major` 수준 이슈가 남아 있지 않은지 확인한다.
-
-## 종료 전 체크
-- 작업 범위가 루트 또는 현재 폴더 소유 범위를 넘지 않았는지 확인한다.
-- 필요한 `work.md`, `error.md`, `context.md` 갱신이 빠지지 않았는지 확인한다.
-- `PLAN.md`와 로컬 문서가 충돌하지 않는지 확인한다.
-- 다음 작업자가 바로 이어받을 수 있게 결정 사항과 블로커를 남긴다.
+## 완료 기준
+- 루트 문서와 실제 코드/계약이 어긋나지 않는다.
+- 변경한 범위에 맞는 검증이 끝났다.
+- 남은 제한사항과 후속 작업이 문서에 반영됐다.
+- 다음 작업자가 바로 이어받을 수 있을 정도로 루트 기준이 최신 상태다.

@@ -32,8 +32,6 @@ docker compose exec server curl --fail --silent --show-error http://127.0.0.1:80
 docker compose run --rm dev bash -lc "python3 TEST-CONCURRENCY/scripts/run_concurrency_case.py TEST-CONCURRENCY/cases/concurrent_select_student.json TEST-CONCURRENCY/cases/concurrent_insert_student.json TEST-CONCURRENCY/cases/mixed_select_insert_student.json --base-url http://server:8080 --timeout 15"
 ```
 
-docker compose exec server bash -lc "curl --fail --silent --show-error -H 'Content-Type: text/plain; charset=utf-8' --data 'SELECT name FROM student WHERE id = 1;' http://127.0.0.1:8080/query"
-
 검증 대상:
 
 - `concurrent_select_student.json`: 같은 종류의 `SELECT` 요청을 순차/동시로 비교
@@ -132,7 +130,52 @@ docker compose run --rm dev bash -lc "python3 TEST-CONCURRENCY/scripts/run_concu
 1. 런타임 lock policy를 `READERS_PARALLEL`로 변경
 2. `concurrent_select_student.json` assertion을 더 엄격하게 조정
 
-## 9. 종료
+## 9. 지연시간 테스트
+
+Postman으로 API 서버의 동시 요청 수용을 시연하려면 `X-Debug-Sleep-Ms` 같은 debug delay 헤더 기능이 먼저 구현되어 있어야 합니다.
+
+현재 저장소 기준으로 이 기능은 `SERVER-HTTP/work.md`에 작업 항목으로 기록되어 있고, 코드에는 아직 반영되지 않았을 수 있습니다.
+미구현 상태라면 아래 절차는 바로 사용할 수 없습니다.
+
+기능이 구현된 뒤에는 아래처럼 테스트합니다.
+
+### Postman 요청 설정
+
+- Method: `POST`
+- URL: `http://localhost:8080/query`
+- Headers:
+  - `Content-Type: text/plain; charset=utf-8`
+  - `X-Debug-Sleep-Ms: 3000`
+- Body:
+
+```sql
+SELECT name FROM student WHERE id = 1;
+```
+
+### 시연 절차
+
+1. 서버를 실행합니다.
+
+```powershell
+docker compose up -d server
+```
+
+2. Postman 탭을 3개 이상 열고 같은 요청을 복제합니다.
+3. 각 탭에 `X-Debug-Sleep-Ms: 3000` 헤더를 넣습니다.
+4. 거의 동시에 `Send`를 누릅니다.
+
+### 기대 결과
+
+- 스레드풀이 있고 sleep이 HTTP 계층에서 적용되면 여러 요청이 비슷한 시점에 시작되고, 응답도 대체로 3초 근처에서 몰려서 돌아옵니다.
+- 요청이 직렬로만 처리되면 응답이 3초, 6초, 9초처럼 순차적으로 밀릴 수 있습니다.
+
+### 주의사항
+
+- 이 테스트는 DB 엔진 병렬성 시연이 아니라 API 서버 계층의 동시 요청 수용 시연입니다.
+- sleep은 DB lock 안이 아니라 `/query` 라우팅 직후, `execute_query(...)` 호출 전에만 들어가야 합니다.
+- 현재 런타임은 `CONCURRENCY_LOCK_POLICY_SERIAL_ALL`이므로 실제 SQL 실행은 여전히 직렬화될 수 있습니다.
+
+## 10. 종료
 
 검증이 끝나면 서버를 내립니다.
 
