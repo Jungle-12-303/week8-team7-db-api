@@ -2,13 +2,16 @@
 
 #include <ctype.h>
 #include <errno.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
 #include <sys/socket.h>
 #include <unistd.h>
 
 #define HTTP_RECEIVE_CHUNK_BYTES 4096u
+#define HTTP_DEBUG_SLEEP_MAX_MS 10000u
 
 #ifdef MSG_NOSIGNAL
 #define HTTP_SEND_FLAGS MSG_NOSIGNAL
@@ -31,6 +34,78 @@ static int http_text_is_blank(const char *text) {
     }
 
     return 1;
+}
+
+static int http_parse_debug_sleep_ms(const http_request *request,
+                                     unsigned int *sleep_ms,
+                                     char *error,
+                                     size_t error_size) {
+    const unsigned char *cursor;
+    unsigned int parsed_value = 0;
+
+    if (sleep_ms == NULL || error == NULL || error_size == 0U) {
+        return 0;
+    }
+
+    *sleep_ms = 0;
+
+    if (request == NULL || !request->debug_sleep_ms_present) {
+        return 1;
+    }
+
+    if (request->debug_sleep_ms[0] == '\0') {
+        snprintf(error,
+                 error_size,
+                 "X-Debug-Sleep-Ms must be an integer between 0 and %u",
+                 HTTP_DEBUG_SLEEP_MAX_MS);
+        return 0;
+    }
+
+    for (cursor = (const unsigned char *)request->debug_sleep_ms; *cursor != '\0'; cursor++) {
+        unsigned int digit;
+
+        if (!isdigit(*cursor)) {
+            snprintf(error,
+                     error_size,
+                     "X-Debug-Sleep-Ms must be an integer between 0 and %u",
+                     HTTP_DEBUG_SLEEP_MAX_MS);
+            return 0;
+        }
+
+        digit = (unsigned int)(*cursor - '0');
+        if (parsed_value > (HTTP_DEBUG_SLEEP_MAX_MS - digit) / 10u) {
+            snprintf(error,
+                     error_size,
+                     "X-Debug-Sleep-Ms must be between 0 and %u milliseconds",
+                     HTTP_DEBUG_SLEEP_MAX_MS);
+            return 0;
+        }
+
+        parsed_value = (parsed_value * 10u) + digit;
+    }
+
+    *sleep_ms = parsed_value;
+    return 1;
+}
+
+static void http_sleep_milliseconds(unsigned int sleep_ms) {
+    struct timespec requested;
+    struct timespec remaining;
+
+    if (sleep_ms == 0) {
+        return;
+    }
+
+    requested.tv_sec = (time_t)(sleep_ms / 1000u);
+    requested.tv_nsec = (long)((sleep_ms % 1000u) * 1000000u);
+
+    while (nanosleep(&requested, &remaining) != 0) {
+        if (errno != EINTR) {
+            return;
+        }
+
+        requested = remaining;
+    }
 }
 
 static void http_close_client(int client_fd) {
@@ -173,6 +248,7 @@ static int http_grow_buffer(char **buffer,
 static int http_route_request(int client_fd,
                               const http_request *request,
                               const http_server_dependencies *dependencies) {
+    unsigned int debug_sleep_ms = 0;
     http_query_result query_result;
     char execution_error[256];
 
@@ -230,6 +306,19 @@ static int http_route_request(int client_fd,
                                              "missing_dependency",
                                              "query executor callback is not configured");
         }
+
+        if (!http_parse_debug_sleep_ms(request,
+                                       &debug_sleep_ms,
+                                       execution_error,
+                                       sizeof(execution_error))) {
+            return http_write_error_response(client_fd,
+                                             400,
+                                             request->path,
+                                             "invalid_header",
+                                             execution_error);
+        }
+
+        http_sleep_milliseconds(debug_sleep_ms);
 
         if (!dependencies->execute_query(dependencies->user_data,
                                          request->body,

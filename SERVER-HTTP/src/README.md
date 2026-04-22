@@ -36,6 +36,11 @@
   - omitted
   - `text/plain`
   - `application/sql`
+- Optional debug header
+  - `X-Debug-Sleep-Ms: <0-10000>`
+  - absent by default
+  - applies only before `execute_query(...)`
+  - intended for demo/testing traffic only
 - Success response:
 
 ```json
@@ -68,6 +73,7 @@
   - malformed request line or headers
   - blank `/query` body
   - body sent to `/health`
+  - invalid `X-Debug-Sleep-Ms` header
 - `404 Not Found`
   - unsupported path
 - `405 Method Not Allowed`

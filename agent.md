@@ -12,6 +12,7 @@
   - `context.md`
   - `work.md`
   - `error.md`
+  - `howtouse.md`
   - `commit-rules.md`
 - 루트 공용 실행 파일
   - `Dockerfile`
@@ -32,18 +33,20 @@
 ## 문서 확인 순서
 1. 루트 `PLAN.md`
 2. 루트 `agent.md`
-3. 루트 `context.md`
-4. 루트 `work.md`
-5. 루트 `error.md`
-6. 현재 작업 디렉터리의 `agent.md`, `context.md`, `work.md`, `error.md`
-7. 필요할 때만 현재 작업 디렉터리 `.codex/`
+3. 루트 `howtouse.md`
+4. 루트 `context.md`
+5. 루트 `work.md`
+6. 루트 `error.md`
+7. 현재 작업 디렉터리의 `agent.md`, `context.md`, `work.md`, `error.md`
+8. 필요할 때만 현재 작업 디렉터리 `.codex/`
 
 ## 문서 우선순위
 1. 루트 `PLAN.md`
 2. 루트 `agent.md`
-3. 현재 작업 디렉터리 `agent.md`
-4. 현재 작업 디렉터리 `context.md`, `work.md`, `error.md`
-5. 현재 작업 디렉터리 `.codex/`
+3. 루트 `howtouse.md`
+4. 현재 작업 디렉터리 `agent.md`
+5. 현재 작업 디렉터리 `context.md`, `work.md`, `error.md`
+6. 현재 작업 디렉터리 `.codex/`
 
 - 하위 문서가 루트 계약과 충돌하면 루트 문서를 우선한다.
 - 공통 API, Docker 실행 방식, 루트 소유 파일, 테스트 계약이 바뀌면 먼저 루트 `PLAN.md` 또는 루트 `agent.md`를 갱신한다.
@@ -52,6 +55,7 @@
 - 공통 API 계약 관리
 - 공통 아키텍처와 디렉터리 책임 경계 관리
 - Docker/빌드/실행 경로 관리
+- 사용자 실행 절차와 데모 절차 문서 관리
 - 하위 디렉터리 진행 현황 취합
 - 테스트 계약 정렬 상태 점검
 - 최종 마무리와 루트 문서 최신화
@@ -70,6 +74,7 @@
 - API 계약 변경 시:
   - `TEST-HTTP-FUNCTIONAL` 케이스와 현재 응답 스키마 일치 여부 확인
   - `/health`, `/query` smoke test 확인
+  - `X-Debug-Sleep-Ms` 같은 선택적 디버그 헤더가 추가되면 `howtouse.md`와 루트 `PLAN.md`를 함께 갱신
 - 서버 런타임/빌드 변경 시:
   - `docker compose up -d server`
   - `docker compose exec server curl --fail --silent --show-error http://127.0.0.1:8080/health`
@@ -91,4 +96,5 @@
 - 루트 문서와 실제 코드/계약이 어긋나지 않는다.
 - 변경한 범위에 맞는 검증이 끝났다.
 - 남은 제한사항과 후속 작업이 문서에 반영됐다.
+- 사용자가 바로 따라 할 수 있는 실행/시연 절차가 `howtouse.md`에 반영됐다.
 - 다음 작업자가 바로 이어받을 수 있을 정도로 루트 기준이 최신 상태다.

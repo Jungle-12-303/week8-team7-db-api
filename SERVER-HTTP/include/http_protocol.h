@@ -20,6 +20,8 @@ typedef struct http_request {
     char path[128];
     char version[16];
     char content_type[64];
+    char debug_sleep_ms[16];
+    int debug_sleep_ms_present;
     size_t content_length;
     char *body;
 } http_request;

@@ -18,9 +18,9 @@
 - `Content-Length` 기반 HTTP request completeness 판단과 parsing
 - `GET /health`, `POST /query` 엔드포인트 분기
 - raw SQL body 및 `Content-Type` 검증
+- `X-Debug-Sleep-Ms` 헤더 파싱과 pre-query debug delay 적용
 - HTTP response JSON 생성
 - `Connection: close` 기반 connection lifecycle 관리
-- 필요 시 debug/demo용 pre-query HTTP 헤더 정책 정리
 
 ## 범위 제외
 - SQL 엔진 직접 호출 세부 구현
@@ -32,6 +32,9 @@
 - 출력: 상태 코드, 헤더, JSON 응답
 - `/health`: `GET` + 빈 body, 응답 필드 `ok`, `path`, `status_code`, `message`
 - `/query`: `POST` + raw SQL body, 허용 `Content-Type`은 없음, `text/plain`, `application/sql`
+- `/query` optional debug header: `X-Debug-Sleep-Ms: <0~10000>`
+- `X-Debug-Sleep-Ms`는 기본 비활성이고 `/query` 라우팅 직후, `execute_query(...)` 호출 전에만 적용한다.
+- `X-Debug-Sleep-Ms` 값이 잘못되면 HTTP `400` + `error_code: "invalid_header"`로 응답한다.
 - `/query` 응답: 성공 시 `ok`, `path`, `status_code`, `message`, `affected_rows`, `output_text`, 실패 시 `error_code` 추가
 - 엔진 호출은 `SERVER-CORE` 인터페이스와 query executor callback 계약을 통해서만 수행한다.
 
@@ -46,9 +49,10 @@
 ## 완료 조건
 - `http_protocol.h`, `http_server.h` 공개 계약이 현재 구현 기준으로 정리된다.
 - `/health`, `/query` 요청 흐름, body 정책, 오류 매핑이 루트 `PLAN.md`와 일치한다.
-- debug/demo용 지연 헤더를 도입할 경우 기본 비활성, HTTP 계층 한정, pre-execute 위치가 문서로 고정된다.
+- `X-Debug-Sleep-Ms` 계약이 기본 비활성, HTTP 계층 한정, pre-execute 위치 기준으로 정리된다.
 
 ## 테스트 기준
 - 정상 SQL 요청 시 live endpoint 기준 JSON 필드와 상태 코드가 일관된다.
 - 잘못된 method/path/body/media type이 안전하게 4xx/5xx로 변환된다.
 - `Connection: close`, raw SQL body, `Content-Length` 기반 단일 요청 정책이 유지된다.
+- `X-Debug-Sleep-Ms`가 `0~10000ms` 범위에서만 동작하고, 잘못된 값은 `400 invalid_header`로 변환된다.

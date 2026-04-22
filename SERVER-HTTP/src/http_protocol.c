@@ -232,6 +232,7 @@ static int http_parse_headers(const char *headers_start,
     const char *cursor = headers_start;
     int saw_content_length = 0;
     int saw_content_type = 0;
+    int saw_debug_sleep_ms = 0;
 
     while (cursor < headers_end) {
         const char *line_end = http_find_crlf(cursor, headers_end);
@@ -297,6 +298,24 @@ static int http_parse_headers(const char *headers_start,
             }
 
             saw_content_type = 1;
+        } else if (http_ascii_equals_ignore_case(name_start, (size_t)(name_end - name_start), "X-Debug-Sleep-Ms")) {
+            if (saw_debug_sleep_ms) {
+                snprintf(error, error_size, "duplicate X-Debug-Sleep-Ms header");
+                return 0;
+            }
+
+            if (!http_copy_span(request->debug_sleep_ms,
+                                sizeof(request->debug_sleep_ms),
+                                value_start,
+                                value_end,
+                                "X-Debug-Sleep-Ms",
+                                error,
+                                error_size)) {
+                return 0;
+            }
+
+            request->debug_sleep_ms_present = 1;
+            saw_debug_sleep_ms = 1;
         } else if (http_ascii_equals_ignore_case(name_start, (size_t)(name_end - name_start), "Transfer-Encoding")) {
             snprintf(error, error_size, "Transfer-Encoding is not supported");
             return 0;
@@ -622,6 +641,8 @@ void http_request_free(http_request *request) {
     request->path[0] = '\0';
     request->version[0] = '\0';
     request->content_type[0] = '\0';
+    request->debug_sleep_ms[0] = '\0';
+    request->debug_sleep_ms_present = 0;
     request->content_length = 0;
 }
 

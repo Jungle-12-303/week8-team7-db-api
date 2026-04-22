@@ -67,8 +67,11 @@
 ### `POST /query`
 - 요청 body는 raw SQL text
 - 권장 헤더는 `Content-Type: text/plain; charset=utf-8`
+- 선택적 디버그 헤더로 `X-Debug-Sleep-Ms: <0~10000>`를 지원한다
+- `X-Debug-Sleep-Ms`는 `/query` 라우팅 직후, `execute_query(...)` 호출 전에만 적용된다
 - 성공 시 `200`
 - SQL 실행 실패는 현재 `400`
+- 잘못된 `X-Debug-Sleep-Ms` 값은 `400` + `error_code: "invalid_header"`로 응답한다
 
 성공 응답 필드:
 - `ok`
@@ -154,6 +157,7 @@ docker compose down
 - `TEST-CONCURRENCY`: self-test 통과
 - Docker 기반 실제 서버에 대해 `TEST-CONCURRENCY` 기본 3케이스 통과
 - `/health`, `/query` Docker runtime smoke test 통과
+- `X-Debug-Sleep-Ms: 3000` 요청 실측 기준 약 `3.66초` 지연 적용 확인
 
 ## 현재 기준 디렉터리 책임
 - 루트
@@ -177,12 +181,13 @@ docker compose down
 - 현재 동시성은 API 레벨 중심이며 DB 실행 병렬성까지는 열지 않았다
 - `READERS_PARALLEL` 정책 전환은 아직 하지 않았다
 - `shutdown-during-request`는 공식 graceful shutdown 제어면이 아직 제한적이다
-- `SERVER-HTTP`의 Postman 시연용 debug delay는 아직 미구현이다
-  - 구현 시 `SERVER-HTTP`의 `/query` 처리 직전에서만 다룬다
-  - SQL 파서와 DB 로직은 건드리지 않는다
+- `X-Debug-Sleep-Ms`는 Postman 시연용 디버그 기능이며, API 서버 계층 동시성 시연용으로만 사용한다
+- `X-Debug-Sleep-Ms`는 SQL 파서나 DB 로직을 바꾸지 않고 HTTP 계층에서만 유지한다
+- `X-Debug-Sleep-Ms`를 기능 테스트나 데모 스크립트에 반영하는 작업은 아직 후속 과제로 남아 있다
 
 ## 기본 가정
 - 루트 공용 파일은 루트에서만 관리한다
 - API는 REST 리소스형이 아니라 SQL 실행형 엔드포인트를 기본으로 한다
 - raw SQL body와 현재 JSON 응답 스키마를 공통 계약으로 본다
+- `X-Debug-Sleep-Ms`는 기본 기능이 아니라 선택적 디버그/데모 헤더로 간주한다
 - Windows 호스트에서도 표준 실행은 Docker 기준으로 맞춘다
