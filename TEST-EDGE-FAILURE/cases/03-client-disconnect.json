@@ -1,0 +1,12 @@
+{
+  "id": "client-disconnect",
+  "title": "클라이언트 중간 종료",
+  "type": "client_disconnect",
+  "description": "Content-Length를 선언한 뒤 일부 body만 보내고 끊어도 프로세스가 유지되어야 한다.",
+  "sql": "SELECT * FROM student;",
+  "partial_bytes": 8,
+  "settle_sec": 0.3,
+  "expect": {
+    "server_alive_after": true
+  }
+}

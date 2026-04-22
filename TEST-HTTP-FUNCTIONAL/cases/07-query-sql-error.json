@@ -1,0 +1,46 @@
+{
+  "name": "query_sql_error",
+  "description": "POST /query returns a structured SQL failure payload",
+  "request": {
+    "method": "POST",
+    "path": "/query",
+    "headers": {
+      "Accept": "application/json",
+      "Content-Type": "text/plain; charset=utf-8"
+    },
+    "rawBody": "SELECT FROM student;"
+  },
+  "expect": {
+    "statusCode": 400,
+    "contentTypeContains": "application/json",
+    "requiredFields": [
+      "ok",
+      "path",
+      "status_code",
+      "error_code",
+      "message",
+      "affected_rows",
+      "output_text"
+    ],
+    "fieldTypes": {
+      "ok": "boolean",
+      "path": "string",
+      "status_code": "integer",
+      "error_code": "string",
+      "message": "string",
+      "affected_rows": "integer",
+      "output_text": "string"
+    },
+    "fieldEquals": {
+      "ok": false,
+      "path": "/query",
+      "status_code": 400,
+      "error_code": "query_failed",
+      "affected_rows": 0,
+      "output_text": ""
+    },
+    "fieldContains": {
+      "message": "expected identifier"
+    }
+  }
+}

@@ -1,0 +1,40 @@
+{
+  "name": "query_blank_sql_body",
+  "description": "POST /query rejects a blank raw SQL body",
+  "request": {
+    "method": "POST",
+    "path": "/query",
+    "headers": {
+      "Accept": "application/json",
+      "Content-Type": "text/plain; charset=utf-8"
+    },
+    "rawBody": "   "
+  },
+  "expect": {
+    "statusCode": 400,
+    "contentTypeContains": "application/json",
+    "requiredFields": [
+      "ok",
+      "path",
+      "status_code",
+      "error_code",
+      "message"
+    ],
+    "fieldTypes": {
+      "ok": "boolean",
+      "path": "string",
+      "status_code": "integer",
+      "error_code": "string",
+      "message": "string"
+    },
+    "fieldEquals": {
+      "ok": false,
+      "path": "/query",
+      "status_code": 400,
+      "error_code": "invalid_body"
+    },
+    "fieldContains": {
+      "message": "SQL statement"
+    }
+  }
+}

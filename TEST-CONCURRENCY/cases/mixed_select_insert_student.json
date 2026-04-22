@@ -1,0 +1,174 @@
+{
+  "name": "mixed-select-insert-student",
+  "description": "SELECT와 INSERT를 동시에 보내고 후행 조회로 write 이후 일관성을 확인한다.",
+  "target": {
+    "base_url_env": "DB_SERVER_URL",
+    "health_path": "/health",
+    "query_path": "/query",
+    "headers": {
+      "Content-Type": "text/plain; charset=utf-8"
+    },
+    "body_template": "{{sql}}"
+  },
+  "phases": [
+    {
+      "name": "concurrent-mixed",
+      "mode": "concurrent",
+      "max_workers": 4,
+      "requests": [
+        {
+          "name": "select-id-1",
+          "sql": "SELECT name FROM student WHERE id = 1;",
+          "expect": {
+            "status": 200,
+            "json_equals": [
+              {
+                "path": "ok",
+                "equals": true
+              }
+            ],
+            "json_string_contains": [
+              {
+                "path": "output_text",
+                "substring": "name_1"
+              }
+            ]
+          }
+        },
+        {
+          "name": "insert-mix-0",
+          "sql": "INSERT INTO student (department, student_number, name, age) VALUES ('qa_mix', 930100, 'tc_mix_{{run_id}}_0', 40);",
+          "expect": {
+            "status": 200,
+            "json_equals": [
+              {
+                "path": "ok",
+                "equals": true
+              },
+              {
+                "path": "affected_rows",
+                "equals": 1
+              }
+            ],
+            "json_string_contains": [
+              {
+                "path": "message",
+                "substring": "INSERT 1"
+              }
+            ]
+          }
+        },
+        {
+          "name": "select-id-2",
+          "sql": "SELECT name FROM student WHERE id = 2;",
+          "expect": {
+            "status": 200,
+            "json_equals": [
+              {
+                "path": "ok",
+                "equals": true
+              }
+            ],
+            "json_string_contains": [
+              {
+                "path": "output_text",
+                "substring": "name_2"
+              }
+            ]
+          }
+        },
+        {
+          "name": "insert-mix-1",
+          "sql": "INSERT INTO student (department, student_number, name, age) VALUES ('qa_mix', 930101, 'tc_mix_{{run_id}}_1', 41);",
+          "expect": {
+            "status": 200,
+            "json_equals": [
+              {
+                "path": "ok",
+                "equals": true
+              },
+              {
+                "path": "affected_rows",
+                "equals": 1
+              }
+            ],
+            "json_string_contains": [
+              {
+                "path": "message",
+                "substring": "INSERT 1"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "verification",
+      "mode": "sequential",
+      "requests": [
+        {
+          "name": "verify-mix-0",
+          "sql": "SELECT name FROM student WHERE name = 'tc_mix_{{run_id}}_0';",
+          "expect": {
+            "status": 200,
+            "json_equals": [
+              {
+                "path": "ok",
+                "equals": true
+              }
+            ],
+            "json_string_contains": [
+              {
+                "path": "output_text",
+                "substring": "tc_mix_{{run_id}}_0"
+              }
+            ],
+            "json_string_occurrence_counts": [
+              {
+                "path": "output_text",
+                "substring": "tc_mix_{{run_id}}_0",
+                "equals": 1
+              }
+            ]
+          }
+        },
+        {
+          "name": "verify-mix-1",
+          "sql": "SELECT name FROM student WHERE name = 'tc_mix_{{run_id}}_1';",
+          "expect": {
+            "status": 200,
+            "json_equals": [
+              {
+                "path": "ok",
+                "equals": true
+              }
+            ],
+            "json_string_contains": [
+              {
+                "path": "output_text",
+                "substring": "tc_mix_{{run_id}}_1"
+              }
+            ],
+            "json_string_occurrence_counts": [
+              {
+                "path": "output_text",
+                "substring": "tc_mix_{{run_id}}_1",
+                "equals": 1
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ],
+  "assertions": [
+    {
+      "type": "phase_requests_success",
+      "phase": "concurrent-mixed"
+    },
+    {
+      "type": "phase_requests_success",
+      "phase": "verification"
+    }
+  ]
+}

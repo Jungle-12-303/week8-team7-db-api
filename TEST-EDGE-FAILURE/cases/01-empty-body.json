@@ -1,0 +1,11 @@
+{
+  "id": "empty-body",
+  "title": "빈 body 요청",
+  "type": "empty_body",
+  "description": "POST /query에 빈 body를 보내도 4xx로 정리되고 서버가 계속 살아 있어야 한다.",
+  "expect": {
+    "statuses": [400],
+    "require_error_payload": true,
+    "server_alive_after": true
+  }
+}

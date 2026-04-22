@@ -1,0 +1,348 @@
+{
+  "name": "concurrent-insert-student",
+  "description": "INSERT 요청을 sequential/concurrent로 비교하고 후행 조회로 write 직렬화와 결과 일관성을 확인한다.",
+  "target": {
+    "base_url_env": "DB_SERVER_URL",
+    "health_path": "/health",
+    "query_path": "/query",
+    "headers": {
+      "Content-Type": "text/plain; charset=utf-8"
+    },
+    "body_template": "{{sql}}"
+  },
+  "phases": [
+    {
+      "name": "sequential-insert-baseline",
+      "mode": "sequential",
+      "requests": [
+        {
+          "name": "insert-seq-0",
+          "sql": "INSERT INTO student (department, student_number, name, age) VALUES ('qa_seq', 910100, 'tc_seq_{{run_id}}_0', 20);",
+          "expect": {
+            "status": 200,
+            "json_equals": [
+              {
+                "path": "ok",
+                "equals": true
+              },
+              {
+                "path": "affected_rows",
+                "equals": 1
+              }
+            ],
+            "json_string_contains": [
+              {
+                "path": "message",
+                "substring": "INSERT 1"
+              }
+            ]
+          }
+        },
+        {
+          "name": "insert-seq-1",
+          "sql": "INSERT INTO student (department, student_number, name, age) VALUES ('qa_seq', 910101, 'tc_seq_{{run_id}}_1', 21);",
+          "expect": {
+            "status": 200,
+            "json_equals": [
+              {
+                "path": "ok",
+                "equals": true
+              },
+              {
+                "path": "affected_rows",
+                "equals": 1
+              }
+            ],
+            "json_string_contains": [
+              {
+                "path": "message",
+                "substring": "INSERT 1"
+              }
+            ]
+          }
+        },
+        {
+          "name": "insert-seq-2",
+          "sql": "INSERT INTO student (department, student_number, name, age) VALUES ('qa_seq', 910102, 'tc_seq_{{run_id}}_2', 22);",
+          "expect": {
+            "status": 200,
+            "json_equals": [
+              {
+                "path": "ok",
+                "equals": true
+              },
+              {
+                "path": "affected_rows",
+                "equals": 1
+              }
+            ],
+            "json_string_contains": [
+              {
+                "path": "message",
+                "substring": "INSERT 1"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "concurrent-insert",
+      "mode": "concurrent",
+      "max_workers": 3,
+      "requests": [
+        {
+          "name": "insert-con-0",
+          "sql": "INSERT INTO student (department, student_number, name, age) VALUES ('qa_con', 920100, 'tc_con_{{run_id}}_0', 30);",
+          "expect": {
+            "status": 200,
+            "json_equals": [
+              {
+                "path": "ok",
+                "equals": true
+              },
+              {
+                "path": "affected_rows",
+                "equals": 1
+              }
+            ],
+            "json_string_contains": [
+              {
+                "path": "message",
+                "substring": "INSERT 1"
+              }
+            ]
+          }
+        },
+        {
+          "name": "insert-con-1",
+          "sql": "INSERT INTO student (department, student_number, name, age) VALUES ('qa_con', 920101, 'tc_con_{{run_id}}_1', 31);",
+          "expect": {
+            "status": 200,
+            "json_equals": [
+              {
+                "path": "ok",
+                "equals": true
+              },
+              {
+                "path": "affected_rows",
+                "equals": 1
+              }
+            ],
+            "json_string_contains": [
+              {
+                "path": "message",
+                "substring": "INSERT 1"
+              }
+            ]
+          }
+        },
+        {
+          "name": "insert-con-2",
+          "sql": "INSERT INTO student (department, student_number, name, age) VALUES ('qa_con', 920102, 'tc_con_{{run_id}}_2', 32);",
+          "expect": {
+            "status": 200,
+            "json_equals": [
+              {
+                "path": "ok",
+                "equals": true
+              },
+              {
+                "path": "affected_rows",
+                "equals": 1
+              }
+            ],
+            "json_string_contains": [
+              {
+                "path": "message",
+                "substring": "INSERT 1"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "verification",
+      "mode": "sequential",
+      "requests": [
+        {
+          "name": "verify-seq-0",
+          "sql": "SELECT name FROM student WHERE name = 'tc_seq_{{run_id}}_0';",
+          "expect": {
+            "status": 200,
+            "json_equals": [
+              {
+                "path": "ok",
+                "equals": true
+              }
+            ],
+            "json_string_contains": [
+              {
+                "path": "output_text",
+                "substring": "tc_seq_{{run_id}}_0"
+              }
+            ],
+            "json_string_occurrence_counts": [
+              {
+                "path": "output_text",
+                "substring": "tc_seq_{{run_id}}_0",
+                "equals": 1
+              }
+            ]
+          }
+        },
+        {
+          "name": "verify-seq-1",
+          "sql": "SELECT name FROM student WHERE name = 'tc_seq_{{run_id}}_1';",
+          "expect": {
+            "status": 200,
+            "json_equals": [
+              {
+                "path": "ok",
+                "equals": true
+              }
+            ],
+            "json_string_contains": [
+              {
+                "path": "output_text",
+                "substring": "tc_seq_{{run_id}}_1"
+              }
+            ],
+            "json_string_occurrence_counts": [
+              {
+                "path": "output_text",
+                "substring": "tc_seq_{{run_id}}_1",
+                "equals": 1
+              }
+            ]
+          }
+        },
+        {
+          "name": "verify-seq-2",
+          "sql": "SELECT name FROM student WHERE name = 'tc_seq_{{run_id}}_2';",
+          "expect": {
+            "status": 200,
+            "json_equals": [
+              {
+                "path": "ok",
+                "equals": true
+              }
+            ],
+            "json_string_contains": [
+              {
+                "path": "output_text",
+                "substring": "tc_seq_{{run_id}}_2"
+              }
+            ],
+            "json_string_occurrence_counts": [
+              {
+                "path": "output_text",
+                "substring": "tc_seq_{{run_id}}_2",
+                "equals": 1
+              }
+            ]
+          }
+        },
+        {
+          "name": "verify-con-0",
+          "sql": "SELECT name FROM student WHERE name = 'tc_con_{{run_id}}_0';",
+          "expect": {
+            "status": 200,
+            "json_equals": [
+              {
+                "path": "ok",
+                "equals": true
+              }
+            ],
+            "json_string_contains": [
+              {
+                "path": "output_text",
+                "substring": "tc_con_{{run_id}}_0"
+              }
+            ],
+            "json_string_occurrence_counts": [
+              {
+                "path": "output_text",
+                "substring": "tc_con_{{run_id}}_0",
+                "equals": 1
+              }
+            ]
+          }
+        },
+        {
+          "name": "verify-con-1",
+          "sql": "SELECT name FROM student WHERE name = 'tc_con_{{run_id}}_1';",
+          "expect": {
+            "status": 200,
+            "json_equals": [
+              {
+                "path": "ok",
+                "equals": true
+              }
+            ],
+            "json_string_contains": [
+              {
+                "path": "output_text",
+                "substring": "tc_con_{{run_id}}_1"
+              }
+            ],
+            "json_string_occurrence_counts": [
+              {
+                "path": "output_text",
+                "substring": "tc_con_{{run_id}}_1",
+                "equals": 1
+              }
+            ]
+          }
+        },
+        {
+          "name": "verify-con-2",
+          "sql": "SELECT name FROM student WHERE name = 'tc_con_{{run_id}}_2';",
+          "expect": {
+            "status": 200,
+            "json_equals": [
+              {
+                "path": "ok",
+                "equals": true
+              }
+            ],
+            "json_string_contains": [
+              {
+                "path": "output_text",
+                "substring": "tc_con_{{run_id}}_2"
+              }
+            ],
+            "json_string_occurrence_counts": [
+              {
+                "path": "output_text",
+                "substring": "tc_con_{{run_id}}_2",
+                "equals": 1
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ],
+  "assertions": [
+    {
+      "type": "phase_requests_success",
+      "phase": "sequential-insert-baseline"
+    },
+    {
+      "type": "phase_requests_success",
+      "phase": "concurrent-insert"
+    },
+    {
+      "type": "elapsed_ratio_at_least",
+      "phase": "concurrent-insert",
+      "baseline": "sequential-insert-baseline",
+      "min_ratio": 0.8
+    },
+    {
+      "type": "phase_requests_success",
+      "phase": "verification"
+    }
+  ]
+}

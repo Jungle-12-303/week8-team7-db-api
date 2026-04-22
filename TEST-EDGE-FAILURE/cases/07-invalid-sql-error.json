@@ -1,0 +1,12 @@
+{
+  "id": "invalid-sql-error",
+  "title": "엔진 오류의 HTTP 전환",
+  "type": "invalid_sql",
+  "description": "잘못된 SQL이 2xx가 아니라 오류 응답으로 전환되고 서버가 계속 살아 있어야 한다.",
+  "sql": "SELECT FROM ;",
+  "expect": {
+    "statuses": [400],
+    "require_error_payload": true,
+    "server_alive_after": true
+  }
+}

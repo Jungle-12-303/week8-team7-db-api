@@ -1,0 +1,41 @@
+{
+  "name": "query_method_not_allowed",
+  "description": "GET /query is rejected",
+  "request": {
+    "method": "GET",
+    "path": "/query",
+    "headers": {
+      "Accept": "application/json"
+    }
+  },
+  "expect": {
+    "statusCode": 405,
+    "contentTypeContains": "application/json",
+    "requiredFields": [
+      "ok",
+      "path",
+      "status_code",
+      "error_code",
+      "message"
+    ],
+    "fieldTypes": {
+      "ok": "boolean",
+      "path": "string",
+      "status_code": "integer",
+      "error_code": "string",
+      "message": "string"
+    },
+    "fieldEquals": {
+      "ok": false,
+      "path": "/query",
+      "status_code": 405,
+      "error_code": "method_not_allowed"
+    },
+    "fieldContains": {
+      "message": "POST"
+    },
+    "fieldNonEmpty": [
+      "message"
+    ]
+  }
+}

@@ -1,0 +1,38 @@
+{
+  "name": "path_not_found",
+  "description": "Unknown paths return a JSON 404 response",
+  "request": {
+    "method": "GET",
+    "path": "/missing-endpoint",
+    "headers": {
+      "Accept": "application/json"
+    }
+  },
+  "expect": {
+    "statusCode": 404,
+    "contentTypeContains": "application/json",
+    "requiredFields": [
+      "ok",
+      "path",
+      "status_code",
+      "error_code",
+      "message"
+    ],
+    "fieldTypes": {
+      "ok": "boolean",
+      "path": "string",
+      "status_code": "integer",
+      "error_code": "string",
+      "message": "string"
+    },
+    "fieldEquals": {
+      "ok": false,
+      "path": "/missing-endpoint",
+      "status_code": 404,
+      "error_code": "path_not_found"
+    },
+    "fieldNonEmpty": [
+      "message"
+    ]
+  }
+}

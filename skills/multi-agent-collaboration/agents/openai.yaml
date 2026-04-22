@@ -1,0 +1,4 @@
+interface:
+  display_name: "Multi-Agent Collaboration"
+  short_description: "Shared rules for folder-scoped agents driven by the root PLAN."
+  default_prompt: "Use $multi-agent-collaboration to coordinate folder-scoped agents. Read the root PLAN.md first, then the root agent.md, then the current folder documents and logs."

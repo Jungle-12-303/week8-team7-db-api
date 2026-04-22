@@ -1,0 +1,16 @@
+{
+  "id": "worker-exhaustion",
+  "title": "Worker exhaustion",
+  "type": "burst_load",
+  "description": "worker가 모두 바쁜 동안 추가 요청이 hang 없이 완료 또는 거절되어야 한다.",
+  "sql": "SELECT * FROM student;",
+  "concurrency_multiplier": 2,
+  "burst_extra": 2,
+  "mock_sleep_ms": 1200,
+  "request_timeout_sec": 4.0,
+  "expect": {
+    "allowed_statuses": [200, 400, 429, 500, 503],
+    "require_overload": false,
+    "server_alive_after": true
+  }
+}

@@ -1,0 +1,17 @@
+{
+  "id": "shutdown-during-request",
+  "title": "Shutdown 중 요청",
+  "type": "shutdown_during_request",
+  "description": "진행 중 요청이 있을 때 종료가 발생해도 재기동 후 /health가 복구되어야 한다.",
+  "seed_sql": "INSERT INTO student (id, department, student_number, name, age) VALUES (999, 'edge', 9999, 'edge-user', 20);",
+  "stream_body_bytes": 32768,
+  "chunk_size": 512,
+  "chunk_delay_ms": 75,
+  "shutdown_after_sec": 0.35,
+  "restart_after": true,
+  "expect": {
+    "allowed_statuses": [200, 503],
+    "accept_disconnect": true,
+    "server_alive_after": true
+  }
+}

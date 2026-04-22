@@ -1,0 +1,196 @@
+{
+  "name": "concurrent-select-student",
+  "description": "동일한 SELECT 묶음을 sequential/concurrent로 비교해 read-read 병렬 흔적을 확인한다.",
+  "target": {
+    "base_url_env": "DB_SERVER_URL",
+    "health_path": "/health",
+    "query_path": "/query",
+    "headers": {
+      "Content-Type": "text/plain; charset=utf-8"
+    },
+    "body_template": "{{sql}}"
+  },
+  "phases": [
+    {
+      "name": "sequential-baseline",
+      "mode": "sequential",
+      "requests": [
+        {
+          "name": "select-id-1",
+          "sql": "SELECT name FROM student WHERE id = 1;",
+          "expect": {
+            "status": 200,
+            "json_equals": [
+              {
+                "path": "ok",
+                "equals": true
+              }
+            ],
+            "json_string_contains": [
+              {
+                "path": "output_text",
+                "substring": "name_1"
+              }
+            ]
+          }
+        },
+        {
+          "name": "select-id-2",
+          "sql": "SELECT name FROM student WHERE id = 2;",
+          "expect": {
+            "status": 200,
+            "json_equals": [
+              {
+                "path": "ok",
+                "equals": true
+              }
+            ],
+            "json_string_contains": [
+              {
+                "path": "output_text",
+                "substring": "name_2"
+              }
+            ]
+          }
+        },
+        {
+          "name": "select-id-3",
+          "sql": "SELECT name FROM student WHERE id = 3;",
+          "expect": {
+            "status": 200,
+            "json_equals": [
+              {
+                "path": "ok",
+                "equals": true
+              }
+            ],
+            "json_string_contains": [
+              {
+                "path": "output_text",
+                "substring": "name_3"
+              }
+            ]
+          }
+        },
+        {
+          "name": "select-id-4",
+          "sql": "SELECT name FROM student WHERE id = 4;",
+          "expect": {
+            "status": 200,
+            "json_equals": [
+              {
+                "path": "ok",
+                "equals": true
+              }
+            ],
+            "json_string_contains": [
+              {
+                "path": "output_text",
+                "substring": "name_4"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "concurrent-select",
+      "mode": "concurrent",
+      "max_workers": 4,
+      "requests": [
+        {
+          "name": "select-id-1",
+          "sql": "SELECT name FROM student WHERE id = 1;",
+          "expect": {
+            "status": 200,
+            "json_equals": [
+              {
+                "path": "ok",
+                "equals": true
+              }
+            ],
+            "json_string_contains": [
+              {
+                "path": "output_text",
+                "substring": "name_1"
+              }
+            ]
+          }
+        },
+        {
+          "name": "select-id-2",
+          "sql": "SELECT name FROM student WHERE id = 2;",
+          "expect": {
+            "status": 200,
+            "json_equals": [
+              {
+                "path": "ok",
+                "equals": true
+              }
+            ],
+            "json_string_contains": [
+              {
+                "path": "output_text",
+                "substring": "name_2"
+              }
+            ]
+          }
+        },
+        {
+          "name": "select-id-3",
+          "sql": "SELECT name FROM student WHERE id = 3;",
+          "expect": {
+            "status": 200,
+            "json_equals": [
+              {
+                "path": "ok",
+                "equals": true
+              }
+            ],
+            "json_string_contains": [
+              {
+                "path": "output_text",
+                "substring": "name_3"
+              }
+            ]
+          }
+        },
+        {
+          "name": "select-id-4",
+          "sql": "SELECT name FROM student WHERE id = 4;",
+          "expect": {
+            "status": 200,
+            "json_equals": [
+              {
+                "path": "ok",
+                "equals": true
+              }
+            ],
+            "json_string_contains": [
+              {
+                "path": "output_text",
+                "substring": "name_4"
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ],
+  "assertions": [
+    {
+      "type": "phase_requests_success",
+      "phase": "sequential-baseline"
+    },
+    {
+      "type": "phase_requests_success",
+      "phase": "concurrent-select"
+    },
+    {
+      "type": "concurrent_shorter_or_overlap",
+      "phase": "concurrent-select",
+      "baseline": "sequential-baseline",
+      "max_ratio": 0.9
+    }
+  ]
+}

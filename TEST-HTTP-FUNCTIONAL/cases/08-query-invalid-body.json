@@ -1,0 +1,43 @@
+{
+  "name": "query_unsupported_media_type",
+  "description": "POST /query rejects JSON payloads because the contract expects raw SQL text",
+  "request": {
+    "method": "POST",
+    "path": "/query",
+    "headers": {
+      "Accept": "application/json",
+      "Content-Type": "application/json; charset=utf-8"
+    },
+    "rawBody": "{\"sql\":\"SELECT * FROM student;\"}"
+  },
+  "expect": {
+    "statusCode": 415,
+    "contentTypeContains": "application/json",
+    "requiredFields": [
+      "ok",
+      "path",
+      "status_code",
+      "error_code",
+      "message"
+    ],
+    "fieldTypes": {
+      "ok": "boolean",
+      "path": "string",
+      "status_code": "integer",
+      "error_code": "string",
+      "message": "string"
+    },
+    "fieldEquals": {
+      "ok": false,
+      "path": "/query",
+      "status_code": 415,
+      "error_code": "unsupported_media_type"
+    },
+    "fieldContains": {
+      "message": "raw SQL body"
+    },
+    "fieldNonEmpty": [
+      "message"
+    ]
+  }
+}

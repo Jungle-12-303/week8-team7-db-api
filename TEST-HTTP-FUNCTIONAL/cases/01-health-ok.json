@@ -1,0 +1,38 @@
+{
+  "name": "health_ok",
+  "description": "GET /health returns the base JSON health payload",
+  "request": {
+    "method": "GET",
+    "path": "/health",
+    "headers": {
+      "Accept": "application/json"
+    }
+  },
+  "expect": {
+    "statusCode": 200,
+    "contentTypeContains": "application/json",
+    "requiredFields": [
+      "ok",
+      "path",
+      "status_code",
+      "message"
+    ],
+    "fieldTypes": {
+      "ok": "boolean",
+      "path": "string",
+      "status_code": "integer",
+      "message": "string"
+    },
+    "fieldEquals": {
+      "ok": true,
+      "path": "/health",
+      "status_code": 200
+    },
+    "fieldContains": {
+      "message": "healthy"
+    },
+    "fieldNonEmpty": [
+      "message"
+    ]
+  }
+}

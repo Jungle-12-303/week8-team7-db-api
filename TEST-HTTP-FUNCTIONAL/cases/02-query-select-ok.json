@@ -1,0 +1,45 @@
+{
+  "name": "query_select_ok",
+  "description": "POST /query executes a normal SELECT request",
+  "request": {
+    "method": "POST",
+    "path": "/query",
+    "headers": {
+      "Accept": "application/json",
+      "Content-Type": "text/plain; charset=utf-8"
+    },
+    "rawBody": "SELECT name FROM student WHERE age = 21;"
+  },
+  "expect": {
+    "statusCode": 200,
+    "contentTypeContains": "application/json",
+    "requiredFields": [
+      "ok",
+      "path",
+      "status_code",
+      "message",
+      "affected_rows",
+      "output_text"
+    ],
+    "fieldTypes": {
+      "ok": "boolean",
+      "path": "string",
+      "status_code": "integer",
+      "message": "string",
+      "affected_rows": "integer",
+      "output_text": "string"
+    },
+    "fieldEquals": {
+      "ok": true,
+      "path": "/query",
+      "status_code": 200
+    },
+    "fieldContains": {
+      "message": "SELECT ",
+      "output_text": "name_1"
+    },
+    "fieldNonEmpty": [
+      "output_text"
+    ]
+  }
+}

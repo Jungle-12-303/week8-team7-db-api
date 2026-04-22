@@ -1,0 +1,14 @@
+{
+  "id": "oversized-sql",
+  "title": "너무 긴 SQL",
+  "type": "oversized_sql",
+  "description": "상한을 넘는 SQL 요청이 crash 없이 4xx로 거절되고 서버가 계속 살아 있어야 한다.",
+  "seed_sql": "SELECT * FROM student;",
+  "multiplier": 2,
+  "minimum_bytes": 8192,
+  "expect": {
+    "statuses": [413],
+    "require_error_payload": true,
+    "server_alive_after": true
+  }
+}

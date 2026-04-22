@@ -1,0 +1,8 @@
+.codex
+build
+SERVER-RUNTIME/*.o
+TEST-ENGINE-ADAPTER/build
+week8-team7-db-api/build
+__pycache__
+*.pyc
+dddddddd.zip
