@@ -13,10 +13,13 @@
 ## 공통 문서 및 스킬 참조
 - 루트 `PLAN.md`의 엣지 케이스 고려 원칙을 따른다.
 - 루트 `agent.md`의 정확성/안정성 검증 규칙을 따른다.
+- `SERVER-HTTP`의 raw SQL body, `X-Debug-Sleep-Ms`, JSON 오류 계약을 따른다.
+- `SERVER-RUNTIME`의 signal 기반 shutdown drain과 queue full/closed `503` 계약을 따른다.
 
 ## 담당 범위
 - 빈 body
 - 너무 긴 SQL
+- 잘못된 debug header
 - 클라이언트 중간 종료
 - queue overflow
 - worker exhaustion
@@ -28,8 +31,8 @@
 - 병렬성 성능 비교
 
 ## 인터페이스
-- 입력: 실패 유도 시나리오
-- 출력: 안전한 오류 응답과 복원 여부
+- 입력: 실패 유도 시나리오와 서버 설정값
+- 출력: 안전한 오류 응답, 상태 코드 계약 충족 여부, 복원 여부
 
 ## 소유 경로
 - `TEST-EDGE-FAILURE/cases/**`
@@ -42,8 +45,10 @@
 
 ## 완료 조건
 - 서버 엣지 케이스 목록이 문서화된다.
-- 오류 전환 정책과 실패 복원 시나리오가 준비된다.
+- 현재 HTTP/런타임 계약에 맞는 오류 전환 정책이 반영된다.
+- 실패 복원 시나리오가 자동 실행 가능한 형태로 준비된다.
 
 ## 테스트 기준
 - 잘못된 요청이 프로세스 crash 없이 처리된다.
+- queue overflow와 shutdown 신규 요청은 현재 계약 기준 `503`으로 정리된다.
 - shutdown/고갈/끊김 상황에서 안전성이 유지된다.

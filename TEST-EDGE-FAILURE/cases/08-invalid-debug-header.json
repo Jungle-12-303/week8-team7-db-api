@@ -1,0 +1,15 @@
+{
+  "id": "invalid-debug-header",
+  "title": "잘못된 debug header",
+  "type": "invalid_debug_header",
+  "description": "잘못된 X-Debug-Sleep-Ms 값이 400 invalid_header로 전환되고 서버가 계속 살아 있어야 한다.",
+  "sql": "SELECT * FROM student;",
+  "header_name": "X-Debug-Sleep-Ms",
+  "header_value": "10001",
+  "expect": {
+    "statuses": [400],
+    "require_error_payload": true,
+    "require_error_code": "invalid_header",
+    "server_alive_after": true
+  }
+}

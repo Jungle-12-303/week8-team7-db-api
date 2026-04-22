@@ -1,14 +1,15 @@
 {
-  "name": "query_sql_error",
-  "description": "POST /query returns a structured SQL failure payload",
+  "name": "query_invalid_debug_sleep_header",
+  "description": "POST /query rejects an invalid X-Debug-Sleep-Ms header value",
   "request": {
     "method": "POST",
     "path": "/query",
     "headers": {
       "Accept": "application/json",
-      "Content-Type": "text/plain; charset=utf-8"
+      "Content-Type": "text/plain; charset=utf-8",
+      "X-Debug-Sleep-Ms": "30000"
     },
-    "rawBody": "SELECT FROM student;"
+    "rawBody": "SELECT name FROM student WHERE id = 1;"
   },
   "expect": {
     "statusCode": 400,
@@ -18,29 +19,26 @@
       "path",
       "status_code",
       "error_code",
-      "message",
-      "affected_rows",
-      "output_text"
+      "message"
     ],
     "fieldTypes": {
       "ok": "boolean",
       "path": "string",
       "status_code": "integer",
       "error_code": "string",
-      "message": "string",
-      "affected_rows": "integer",
-      "output_text": "string"
+      "message": "string"
     },
     "fieldEquals": {
       "ok": false,
       "path": "/query",
       "status_code": 400,
-      "error_code": "query_failed",
-      "affected_rows": 0,
-      "output_text": ""
+      "error_code": "invalid_header"
     },
     "fieldContains": {
-      "message": "expected keyword FROM"
-    }
+      "message": "X-Debug-Sleep-Ms"
+    },
+    "fieldNonEmpty": [
+      "message"
+    ]
   }
 }

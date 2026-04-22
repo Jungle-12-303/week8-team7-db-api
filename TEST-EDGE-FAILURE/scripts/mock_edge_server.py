@@ -10,6 +10,9 @@ from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 
+MAX_DEBUG_SLEEP_MS = 10000
+
+
 class ServerState:
     def __init__(self, workers: int, queue_capacity: int, sql_bytes_limit: int, queue_wait_ms: int) -> None:
         self.sql_bytes_limit = sql_bytes_limit
@@ -30,7 +33,16 @@ class MockEdgeHandler(BaseHTTPRequestHandler):
         return
 
     def safe_json(self, status: int, payload: dict[str, object]) -> None:
-        body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+        normalized = dict(payload)
+        normalized.setdefault("status_code", status)
+        if status >= 400:
+            normalized.setdefault("ok", False)
+            if "error" in normalized and "error_code" not in normalized:
+                normalized["error_code"] = normalized["error"]
+            normalized.setdefault("message", str(normalized.get("error_code", "request_failed")))
+        else:
+            normalized.setdefault("ok", True)
+        body = json.dumps(normalized, ensure_ascii=False).encode("utf-8")
         try:
             self.send_response(status)
             self.send_header("Content-Type", "application/json; charset=utf-8")
@@ -39,6 +51,32 @@ class MockEdgeHandler(BaseHTTPRequestHandler):
             self.wfile.write(body)
         except OSError:
             pass
+
+    def parse_debug_sleep_ms(self) -> int | None:
+        raw_value = self.headers.get("X-Debug-Sleep-Ms")
+        if raw_value is None:
+            return 0
+        try:
+            sleep_ms = int(raw_value)
+        except ValueError:
+            self.safe_json(
+                HTTPStatus.BAD_REQUEST,
+                {
+                    "error": "invalid_header",
+                    "message": f"X-Debug-Sleep-Ms must be an integer between 0 and {MAX_DEBUG_SLEEP_MS}",
+                },
+            )
+            return None
+        if sleep_ms < 0 or sleep_ms > MAX_DEBUG_SLEEP_MS:
+            self.safe_json(
+                HTTPStatus.BAD_REQUEST,
+                {
+                    "error": "invalid_header",
+                    "message": f"X-Debug-Sleep-Ms must be between 0 and {MAX_DEBUG_SLEEP_MS} milliseconds",
+                },
+            )
+            return None
+        return sleep_ms
 
     def do_GET(self) -> None:
         if self.path != "/health":
@@ -95,7 +133,10 @@ class MockEdgeHandler(BaseHTTPRequestHandler):
 
     def execute_query(self, body: bytes) -> None:
         sql = body.decode("utf-8", errors="replace").strip()
-        sleep_ms = int(self.headers.get("X-Mock-Sleep-Ms", "0") or "0")
+        debug_sleep_ms = self.parse_debug_sleep_ms()
+        if debug_sleep_ms is None:
+            return
+        sleep_ms = debug_sleep_ms or int(self.headers.get("X-Mock-Sleep-Ms", "0") or "0")
         if sleep_ms > 0:
             time.sleep(sleep_ms / 1000.0)
         if self.headers.get("X-Mock-Engine-Failure") == "1" or "ENGINE_INTERNAL_ERROR" in sql:
@@ -105,6 +146,10 @@ class MockEdgeHandler(BaseHTTPRequestHandler):
             self.safe_json(HTTPStatus.BAD_REQUEST, {"error": "invalid_sql"})
             return
         self.safe_json(HTTPStatus.OK, {"ok": True, "message": "mock success", "rows": []})
+
+
+class MockEdgeServer(ThreadingHTTPServer):
+    request_queue_size = 128
 
 
 def install_signal_handlers(server: ThreadingHTTPServer, state: ServerState) -> None:
@@ -137,7 +182,7 @@ def main() -> int:
         sql_bytes_limit=args.sql_bytes_limit,
         queue_wait_ms=args.queue_wait_ms,
     )
-    server = ThreadingHTTPServer((args.host, args.port), MockEdgeHandler)
+    server = MockEdgeServer((args.host, args.port), MockEdgeHandler)
     server.state = state  # type: ignore[attr-defined]
     install_signal_handlers(server, state)
     try:

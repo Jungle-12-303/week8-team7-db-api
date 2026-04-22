@@ -15,15 +15,18 @@
 - `05-worker-exhaustion.json`
   - worker가 모두 바쁜 동안 추가 요청이 hang 없이 처리 또는 거절되는지 확인합니다.
 - `06-shutdown-during-request.json`
-  - 진행 중 요청이 있을 때 종료가 발생해도 재기동 후 `/health`가 복구되는지 확인합니다.
+  - signal 기반 graceful shutdown이 들어왔을 때 진행 중 요청과 종료 이후 복구를 확인합니다.
 - `07-invalid-sql-error.json`
   - 잘못된 SQL이 2xx가 아닌 오류 응답으로 전환되는지 확인합니다.
+- `08-invalid-debug-header.json`
+  - 잘못된 `X-Debug-Sleep-Ms` 값이 `400 invalid_header`로 정리되는지 확인합니다.
 
 ## 상태 코드 기준
 - 자세한 HTTP 오류 전환 정책은 [error-mapping.md](error-mapping.md)에서 관리합니다.
 - 현재 `SERVER-HTTP` 구현이 이미 확정한 구간은 각 JSON의 허용 상태 코드를 최종 계약값으로 좁혀 두었습니다.
-- overload, shutdown, disconnect처럼 런타임 조립 상태에 따라 달라질 수 있는 케이스만 보조 허용값을 유지합니다.
+- 현재 `SERVER-RUNTIME` 구현을 기준으로 queue overflow와 shutdown 신규 요청은 `503`으로 고정합니다.
+- in-flight 연결 종료처럼 peer/타이밍 영향이 남는 케이스만 보조 허용값을 유지합니다.
 
 ## 사용 메모
-- `queue_overflow`, `worker_exhaustion`은 `--worker-count`, `--queue-capacity` 값을 실제 서버 설정과 맞춰야 의미가 있습니다.
-- `shutdown-during-request`는 현재 외부 graceful shutdown 제어면이 없어서 managed subprocess stop/restart 기반으로 검증합니다.
+- 실제 `db_server` 런타임은 queue capacity를 `max(worker_count * 4, 8)`로 계산하므로 `--queue-capacity`도 그 값과 맞춰야 합니다.
+- `shutdown-during-request`는 managed subprocess가 있어야 자동 수행되며, 가능하면 OS signal 기반 graceful stop을 사용하고 불가능하면 terminate로 fallback합니다.

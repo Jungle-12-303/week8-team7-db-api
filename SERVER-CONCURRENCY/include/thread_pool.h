@@ -80,6 +80,12 @@ void concurrency_thread_pool_shutdown(
  */
 void concurrency_thread_pool_destroy(ConcurrencyThreadPool *pool);
 
+/*
+ * 현재 스레드가 worker라면 worker index를, 아니면 -1을 반환한다.
+ * HTTP/런타임 계층이 요청 로그에 thread 식별자를 붙일 때 사용한다.
+ */
+int concurrency_thread_pool_current_worker_index(void);
+
 /* 디버깅과 로그를 위해 shutdown 모드 이름을 돌려준다. */
 const char *concurrency_thread_pool_shutdown_mode_name(ConcurrencyThreadPoolShutdownMode mode);
 

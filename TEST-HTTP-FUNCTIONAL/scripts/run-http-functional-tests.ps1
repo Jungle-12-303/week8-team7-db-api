@@ -2,6 +2,10 @@ param(
     [string]$BaseUrl = "http://127.0.0.1:8080",
     [string]$CasesDir = (Join-Path $PSScriptRoot "..\cases"),
     [string[]]$CaseName,
+    [ValidateSet("direct", "docker-compose-exec")]
+    [string]$Transport = "direct",
+    [string]$DockerComposeFile = (Join-Path $PSScriptRoot "..\..\compose.yaml"),
+    [string]$DockerService = "server",
     [switch]$ListCases,
     [switch]$ValidateOnly
 )
@@ -125,20 +129,20 @@ function Get-ValueTypeName {
         return "boolean"
     }
 
-    if ($Value -is [byte] -or
-        $Value -is [sbyte] -or
-        $Value -is [short] -or
-        $Value -is [ushort] -or
-        $Value -is [int] -or
-        $Value -is [uint] -or
-        $Value -is [long] -or
-        $Value -is [ulong]) {
+    if ($Value -is [Byte] -or
+        $Value -is [SByte] -or
+        $Value -is [Int16] -or
+        $Value -is [UInt16] -or
+        $Value -is [Int32] -or
+        $Value -is [UInt32] -or
+        $Value -is [Int64] -or
+        $Value -is [UInt64]) {
         return "integer"
     }
 
-    if ($Value -is [float] -or
-        $Value -is [double] -or
-        $Value -is [decimal]) {
+    if ($Value -is [Single] -or
+        $Value -is [Double] -or
+        $Value -is [Decimal]) {
         return "number"
     }
 
@@ -167,6 +171,24 @@ function Assert-Condition {
 
     if (-not $Condition) {
         throw $Message
+    }
+}
+
+function Invoke-ExternalCapture {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$FilePath,
+        [Parameter(Mandatory = $true)]
+        [string[]]$ArgumentList
+    )
+
+    $output = & $FilePath @ArgumentList 2>&1
+    $exitCode = $LASTEXITCODE
+    $text = ($output | ForEach-Object { [string]$_ }) -join [Environment]::NewLine
+
+    return @{
+        exitCode = $exitCode
+        text = $text
     }
 }
 
@@ -224,6 +246,21 @@ function Invoke-CaseRequest {
         [hashtable]$Case
     )
 
+    if ($script:Transport -eq "docker-compose-exec") {
+        return Invoke-CaseRequestDockerCompose -BaseUrlValue $BaseUrlValue -Case $Case
+    }
+
+    return Invoke-CaseRequestDirect -BaseUrlValue $BaseUrlValue -Case $Case
+}
+
+function Invoke-CaseRequestDirect {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$BaseUrlValue,
+        [Parameter(Mandatory = $true)]
+        [hashtable]$Case
+    )
+
     $requestDefinition = $Case["request"]
     $uri = [System.Uri]::new(($BaseUrlValue.TrimEnd("/")) + [string]$requestDefinition["path"])
     $request = [System.Net.HttpWebRequest]::Create($uri)
@@ -250,32 +287,128 @@ function Invoke-CaseRequest {
         Write-RequestBody -Request $request -RequestDefinition $requestDefinition
     }
 
-    try {
-        $response = $request.GetResponse()
-    } catch [System.Net.WebException] {
-        if ($null -eq $_.Exception.Response) {
-            throw "request failed before receiving an HTTP response: $($_.Exception.Message)"
-        }
-        $response = $_.Exception.Response
-    }
+    $stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
 
     try {
-        $statusCode = [int]([System.Net.HttpWebResponse]$response).StatusCode
-        $contentType = $response.ContentType
-        $reader = [System.IO.StreamReader]::new($response.GetResponseStream(), [System.Text.Encoding]::UTF8)
         try {
-            $body = $reader.ReadToEnd()
-        } finally {
-            $reader.Dispose()
+            $response = $request.GetResponse()
+        } catch [System.Net.WebException] {
+            if ($null -eq $_.Exception.Response) {
+                throw "request failed before receiving an HTTP response: $($_.Exception.Message)"
+            }
+            $response = $_.Exception.Response
         }
 
-        return @{
-            statusCode = $statusCode
-            contentType = $contentType
-            body = $body
+        try {
+            $statusCode = [int]([System.Net.HttpWebResponse]$response).StatusCode
+            $contentType = $response.ContentType
+            $reader = [System.IO.StreamReader]::new($response.GetResponseStream(), [System.Text.Encoding]::UTF8)
+            try {
+                $body = $reader.ReadToEnd()
+            } finally {
+                $reader.Dispose()
+            }
+
+            return @{
+                statusCode = $statusCode
+                contentType = $contentType
+                body = $body
+                durationMs = [int][math]::Round($stopwatch.Elapsed.TotalMilliseconds)
+            }
+        } finally {
+            $response.Dispose()
         }
     } finally {
-        $response.Dispose()
+        $stopwatch.Stop()
+    }
+}
+
+function Invoke-CaseRequestDockerCompose {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$BaseUrlValue,
+        [Parameter(Mandatory = $true)]
+        [hashtable]$Case
+    )
+
+    $requestDefinition = $Case["request"]
+    $requestUrl = ($BaseUrlValue.TrimEnd("/")) + [string]$requestDefinition["path"]
+    $curlArguments = @(
+        "compose",
+        "-f",
+        $script:DockerComposeFile,
+        "exec",
+        "-T",
+        $script:DockerService,
+        "curl",
+        "--silent",
+        "--show-error",
+        "--request",
+        [string]$requestDefinition["method"]
+    )
+
+    if ($requestDefinition.Contains("headers")) {
+        foreach ($entry in $requestDefinition["headers"].GetEnumerator()) {
+            $curlArguments += @(
+                "--header",
+                ("{0}: {1}" -f [string]$entry.Key, [string]$entry.Value)
+            )
+        }
+    }
+
+    if ($requestDefinition.Contains("rawBody")) {
+        $curlArguments += @(
+            "--data-binary",
+            [string]$requestDefinition["rawBody"]
+        )
+    } elseif ($requestDefinition.Contains("jsonBody")) {
+        $curlArguments += @(
+            "--data-binary",
+            ($requestDefinition["jsonBody"] | ConvertTo-Json -Depth 100 -Compress)
+        )
+    }
+
+    $metadataMarker = "__CODEX_HTTP_META__"
+    $writeOut = $metadataMarker + "http_code=%{http_code}`ncontent_type=%{content_type}`ntime_total=%{time_total}"
+    $curlArguments += @(
+        "--write-out",
+        $writeOut,
+        $requestUrl
+    )
+
+    $dockerResult = Invoke-ExternalCapture -FilePath "docker" -ArgumentList $curlArguments
+
+    if ([int]$dockerResult["exitCode"] -ne 0) {
+        throw "docker-compose-exec transport failed: $($dockerResult["text"])"
+    }
+
+    $rawText = [string]$dockerResult["text"]
+    $markerIndex = $rawText.LastIndexOf($metadataMarker)
+    if ($markerIndex -lt 0) {
+        throw "docker-compose-exec response metadata is missing"
+    }
+
+    $body = $rawText.Substring(0, $markerIndex)
+    $metadataText = $rawText.Substring($markerIndex + $metadataMarker.Length)
+    $metadata = @{}
+    foreach ($line in ($metadataText -split "\r?\n")) {
+        if ([string]::IsNullOrWhiteSpace($line)) {
+            continue
+        }
+
+        $parts = $line -split "=", 2
+        if ($parts.Count -ne 2) {
+            throw "docker-compose-exec metadata line is malformed: $line"
+        }
+
+        $metadata[$parts[0]] = $parts[1]
+    }
+
+    return @{
+        statusCode = [int]$metadata["http_code"]
+        contentType = [string]$metadata["content_type"]
+        body = $body
+        durationMs = [int][math]::Round(([double]$metadata["time_total"]) * 1000.0)
     }
 }
 
@@ -363,6 +496,16 @@ function Test-ResponseAgainstExpectation {
                 Assert-Condition -Condition ($null -ne $actualValue) -Message "field '$path' must not be null"
             }
         }
+    }
+
+    if ($expect.Contains("minDurationMs")) {
+        Assert-Condition -Condition ($Response.Contains("durationMs")) -Message "response does not include durationMs"
+        Assert-Condition -Condition ([int]$Response["durationMs"] -ge [int]$expect["minDurationMs"]) -Message "expected duration >= $($expect["minDurationMs"])ms, got $($Response["durationMs"])ms"
+    }
+
+    if ($expect.Contains("maxDurationMs")) {
+        Assert-Condition -Condition ($Response.Contains("durationMs")) -Message "response does not include durationMs"
+        Assert-Condition -Condition ([int]$Response["durationMs"] -le [int]$expect["maxDurationMs"]) -Message "expected duration <= $($expect["maxDurationMs"])ms, got $($Response["durationMs"])ms"
     }
 }
 

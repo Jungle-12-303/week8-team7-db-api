@@ -3,9 +3,12 @@
 ## Summary
 - 기존 SQL 엔진은 `week8-team7-db-api`를 그대로 사용한다.
 - 루트 런타임은 `SERVER-CORE`, `SERVER-HTTP`, `SERVER-CONCURRENCY`, `SERVER-RUNTIME`를 조립해 `build/bin/db_server`를 만든다.
-- 현재 공개 HTTP API는 최소 범위인 `GET /health`, `POST /query` 두 개다.
+- 현재 공개 HTTP API는 `GET /health`, `POST /query` 두 개다.
 - `POST /query`는 raw SQL text body를 받아 엔진으로 넘기고 JSON으로 결과를 반환한다.
 - 동시성은 API 서버 계층에서 구현되어 있다. 요청 수용, 큐잉, worker 배정은 병렬이지만 실제 DB 실행 구간은 현재 `CONCURRENCY_LOCK_POLICY_SERIAL_ALL` 정책으로 직렬화한다.
+- `X-Debug-Sleep-Ms`는 API 계층 동시 요청 시연용 선택적 디버그 헤더다.
+- 현재 즉시 시연 경로는 서버 내부 로그가 아니라 `TEST-CONCURRENCY` 러너 출력이다. 러너는 `timeline`, `start_spread_ms`, `overlap_window_ms`, `concurrency_confirmed`를 직접 출력한다.
+- 현재 HTTP 계층 요청 추적 로그는 구현되어 있고, DB 작업/락/종료 요약 로그는 후속 작업으로 남아 있다.
 - 표준 실행 환경은 루트 `Dockerfile`과 `compose.yaml` 기반 Linux 컨테이너다.
 
 ## 현재 구조
@@ -24,11 +27,14 @@
 - `/health`, `/query` routing
 - JSON 응답 생성
 - raw SQL request body 검증
+- `X-Debug-Sleep-Ms` 처리
+- 요청 수신/응답 완료 한 줄 추적 로그
 
 ### `SERVER-CONCURRENCY`
 - bounded job queue
 - worker thread pool
 - lock manager
+- worker 할당 콜백과 현재 worker index 노출 지점 제공
 
 ### `SERVER-RUNTIME`
 - listener socket 생성
@@ -39,8 +45,8 @@
 
 ### `TEST-*`
 - `TEST-ENGINE-ADAPTER`: `SERVER-CORE` 공개 API 계약 검증
-- `TEST-HTTP-FUNCTIONAL`: HTTP 계약 검증
-- `TEST-CONCURRENCY`: 동시 요청 및 결과 무결성 검증
+- `TEST-HTTP-FUNCTIONAL`: HTTP 계약과 live 응답 검증
+- `TEST-CONCURRENCY`: 동시 요청, overlap, 결과 무결성 검증과 시연용 timing/timeline 출력
 - `TEST-EDGE-FAILURE`: 경계 실패 케이스 검증
 
 ## API 계약
@@ -72,6 +78,7 @@
 - 성공 시 `200`
 - SQL 실행 실패는 현재 `400`
 - 잘못된 `X-Debug-Sleep-Ms` 값은 `400` + `error_code: "invalid_header"`로 응답한다
+- queue full은 현재 `503 server_busy`, runtime drain/queue closed는 `503 server_stopping`으로 본다
 
 성공 응답 필드:
 - `ok`
@@ -101,6 +108,35 @@
 }
 ```
 
+## 로그와 관측
+
+### 현재 구현됨
+- `SERVER-HTTP`는 요청 parse 직후 `요청 수신`, route 처리 후 `응답 완료`를 req_id 기준 한 줄 로그로 남긴다
+- 로그는 기본적으로 서버 `stdout`에 기록되며 Docker에서는 `docker compose logs -f server`로 확인한다
+- 현재 확인된 형식은 다음 계열이다
+
+```text
+[HTTP] | req_id=12 | event=요청 수신 | method=POST | path=/query | ...
+[HTTP] | req_id=12 | event=응답 완료 | method=POST | path=/query | status=200 | ...
+```
+
+### 아직 남아 있음
+- `스레드 할당`
+- `DB 작업 시작`
+- `DB 작업 종료`
+- `락 대기/획득/해제`
+- shutdown 시 마지막 요약 로그
+
+## 동시성 시연 경로
+- 현재 권장 시연은 `docker compose logs -f server`가 아니라 `TEST-CONCURRENCY/scripts/run_concurrency_case.py` 출력이다.
+- 특히 `debug_sleep_overlap_select.json`은 `X-Debug-Sleep-Ms: 500`을 사용해 API 계층 overlap을 눈으로 확인하도록 설계돼 있다.
+- 현재 러너 출력은 phase별로 다음 정보를 직접 보여준다.
+  - `start_spread_ms`
+  - `overlap_window_ms`
+  - `concurrency_confirmed`
+  - 요청별 상대 시각 START/END timeline
+- 따라서 동시성 시연 요구가 "테스트 실행 결과만 보고 확인"인 경우, 서버 내부 로그 확장 없이도 러너 출력만으로 설명 가능하다.
+
 ## 빌드와 실행
 
 ### 서버 빌드
@@ -127,6 +163,24 @@ docker compose exec server curl --fail --silent --show-error http://127.0.0.1:80
 docker compose exec server bash -lc "curl --fail --silent --show-error -H 'Content-Type: text/plain; charset=utf-8' --data 'SELECT name FROM student WHERE id = 1;' http://127.0.0.1:8080/query"
 ```
 
+### 지연 시연
+
+```powershell
+curl -H "Content-Type: text/plain; charset=utf-8" -H "X-Debug-Sleep-Ms: 3000" --data "SELECT name FROM student WHERE id = 1;" http://localhost:8080/query
+```
+
+### 동시성 시연 테스트
+
+```powershell
+docker compose run --rm dev bash -lc "python3 TEST-CONCURRENCY/scripts/run_concurrency_case.py TEST-CONCURRENCY/cases/debug_sleep_overlap_select.json --base-url http://server:8080 --timeout 15"
+```
+
+### 로그 확인
+
+```powershell
+docker compose logs -f server
+```
+
 ### 종료
 
 ```powershell
@@ -143,6 +197,7 @@ docker compose down
 현재 의미:
 - API 서버는 동시에 여러 요청을 받을 수 있다
 - 요청 처리 파이프라인과 worker 동작은 병렬이다
+- `X-Debug-Sleep-Ms`로 API 계층 overlap을 시연할 수 있다
 - DB 실행은 무결성을 우선해 보수적으로 직렬화되어 있다
 
 현재 의미하지 않는 것:
@@ -153,11 +208,22 @@ docker compose down
 ## 현재 검증 상태
 - `week8-team7-db-api` Docker 테스트: `375/375` 통과
 - `TEST-ENGINE-ADAPTER`: `38/38` 통과
-- `TEST-HTTP-FUNCTIONAL`: `-ValidateOnly` 기준 10 케이스 검증 통과
-- `TEST-CONCURRENCY`: self-test 통과
-- Docker 기반 실제 서버에 대해 `TEST-CONCURRENCY` 기본 3케이스 통과
+- `TEST-HTTP-FUNCTIONAL`
+  - `-ValidateOnly` 기준 12 케이스 검증 통과
+  - `-Transport docker-compose-exec` 기준 실제 서버 `12/12 passed`
+- `TEST-CONCURRENCY`
+  - self-test 통과
+  - `run_concurrency_case.py` 출력에 `start_spread_ms`, `overlap_window_ms`, `concurrency_confirmed`, START/END timeline 추가 완료
+  - `debug_sleep_overlap_select.json`에 `start_spread_at_most` assertion 추가 완료
+  - live `debug_sleep_overlap_select` 재검증에서 `start_spread_at_most` 포함 PASS 기록
+  - Docker 기반 실제 서버에서 `concurrent_select`, `concurrent_insert`, `mixed_select_insert`, `debug_sleep_overlap_select` 4케이스 통과
+- `TEST-EDGE-FAILURE`
+  - mock 서버 기준 8개 케이스 통과
+  - `invalid-debug-header` 케이스 추가 및 상태 코드 정렬 완료
 - `/health`, `/query` Docker runtime smoke test 통과
 - `X-Debug-Sleep-Ms: 3000` 요청 실측 기준 약 `3.66초` 지연 적용 확인
+- `X-Debug-Sleep-Ms: 300` live 기능 테스트 기준 약 `320ms` 지연 적용 확인
+- `docker compose logs` 기준 HTTP 요청 추적 로그 `[요청 수신]`, `[응답 완료]`, `status=...` 형식 확인
 
 ## 현재 기준 디렉터리 책임
 - 루트
@@ -169,7 +235,7 @@ docker compose down
 - `SERVER-CORE`
   - 엔진 실행 경계
 - `SERVER-HTTP`
-  - HTTP 계약과 라우팅
+  - HTTP 계약, 디버그 헤더, 요청 추적 로그
 - `SERVER-CONCURRENCY`
   - queue/pool/lock manager
 - `SERVER-RUNTIME`
@@ -180,14 +246,17 @@ docker compose down
 ## 남은 작업과 제한사항
 - 현재 동시성은 API 레벨 중심이며 DB 실행 병렬성까지는 열지 않았다
 - `READERS_PARALLEL` 정책 전환은 아직 하지 않았다
+- `SERVER-RUNTIME`의 DB 작업/락/요약 로그는 아직 미구현이다
+- 현재 동시성 시연 요구는 `TEST-CONCURRENCY` 출력으로 충족되지만, 서버 내부 단계(`스레드 할당`, `DB 작업 시작/종료`, `락`)까지 시연하려면 `SERVER-*` 로그 확장이 별도로 필요하다
 - `shutdown-during-request`는 공식 graceful shutdown 제어면이 아직 제한적이다
-- `X-Debug-Sleep-Ms`는 Postman 시연용 디버그 기능이며, API 서버 계층 동시성 시연용으로만 사용한다
+- `queue-overflow`, `worker-exhaustion`, `shutdown-during-request`의 live Docker 결과 누적은 아직 남아 있다
+- Windows 호스트 PowerShell에서 `http://127.0.0.1:8080` direct 접근 timeout 원인은 아직 분리되지 않았다
+- `X-Debug-Sleep-Ms`는 DB 병렬성 시연이 아니라 API 서버 계층 동시 요청 시연용이다
 - `X-Debug-Sleep-Ms`는 SQL 파서나 DB 로직을 바꾸지 않고 HTTP 계층에서만 유지한다
-- `X-Debug-Sleep-Ms`를 기능 테스트나 데모 스크립트에 반영하는 작업은 아직 후속 과제로 남아 있다
 
 ## 기본 가정
 - 루트 공용 파일은 루트에서만 관리한다
 - API는 REST 리소스형이 아니라 SQL 실행형 엔드포인트를 기본으로 한다
 - raw SQL body와 현재 JSON 응답 스키마를 공통 계약으로 본다
-- `X-Debug-Sleep-Ms`는 기본 기능이 아니라 선택적 디버그/데모 헤더로 간주한다
+- `X-Debug-Sleep-Ms`는 선택적 디버그/데모 헤더로 간주한다
 - Windows 호스트에서도 표준 실행은 Docker 기준으로 맞춘다

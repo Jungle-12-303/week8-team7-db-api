@@ -10,6 +10,8 @@
 - `python scripts/run_concurrency_case.py --self-test`
 
 ## 케이스 계약
-- `target.body_template`로 SQL 요청 JSON 포맷을 바꿀 수 있다.
+- `target.body_template`로 raw SQL text body나 JSON body 포맷을 바꿀 수 있다.
 - `expect.json_equals`, `expect.json_string_contains`, `expect.json_string_occurrence_counts`로 응답 검증을 세밀하게 조정할 수 있다.
+- concurrent phase 결과에는 `start_spread_ms`, `overlap_window_ms`, `concurrency_confirmed`, START/END timeline이 함께 출력된다.
 - 직렬 `INSERT` 판정은 wall-clock 비율과 후행 조회 일관성으로 확인한다.
+- `X-Debug-Sleep-Ms` 같은 요청 헤더도 케이스별 `headers`로 직접 지정할 수 있다.

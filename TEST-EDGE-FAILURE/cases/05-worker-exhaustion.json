@@ -9,8 +9,9 @@
   "mock_sleep_ms": 1200,
   "request_timeout_sec": 4.0,
   "expect": {
-    "allowed_statuses": [200, 400, 429, 500, 503],
-    "require_overload": false,
+    "allowed_statuses": [200, 503],
+    "overload_statuses": [503],
+    "require_overload": true,
     "server_alive_after": true
   }
 }

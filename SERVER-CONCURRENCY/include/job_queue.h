@@ -33,6 +33,9 @@ typedef void (*ConcurrencyJobNotifyFn)(
     int run_status
 );
 
+/* worker가 작업을 꺼낸 직후 호출하는 선택적 콜백이다. */
+typedef void (*ConcurrencyJobAssignedFn)(void *context, int worker_index);
+
 /* notify 이후 context 정리에 사용할 선택적 콜백이다. */
 typedef void (*ConcurrencyJobCleanupFn)(void *context);
 
@@ -42,6 +45,7 @@ typedef void (*ConcurrencyJobCleanupFn)(void *context);
  */
 typedef struct {
     ConcurrencyLockMode lock_mode;
+    ConcurrencyJobAssignedFn assigned;
     ConcurrencyJobRunFn run;
     ConcurrencyJobNotifyFn notify;
     ConcurrencyJobCleanupFn cleanup;

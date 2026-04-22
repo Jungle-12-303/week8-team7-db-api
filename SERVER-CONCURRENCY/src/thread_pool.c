@@ -3,6 +3,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+static _Thread_local int current_worker_index = -1;
+
 struct ConcurrencyThreadPoolWorkerState {
     ConcurrencyThreadPool *pool;
     int worker_index;
@@ -17,6 +19,7 @@ static void *worker_main(void *arg) {
 
     worker = (ConcurrencyThreadPoolWorkerState *)arg;
     memset(&job, 0, sizeof(job));
+    current_worker_index = worker->worker_index;
 
     for (;;) {
         status = concurrency_job_queue_pop(&worker->pool->queue, &job);
@@ -28,6 +31,10 @@ static void *worker_main(void *arg) {
             continue;
         }
 
+        if (job.assigned != NULL) {
+            job.assigned(job.context, worker->worker_index);
+        }
+
         concurrency_lock_manager_acquire(&worker->pool->lock_manager, job.lock_mode);
         run_status = job.run(job.context);
         concurrency_lock_manager_release(&worker->pool->lock_manager, job.lock_mode);
@@ -37,6 +44,7 @@ static void *worker_main(void *arg) {
         memset(&job, 0, sizeof(job));
     }
 
+    current_worker_index = -1;
     return NULL;
 }
 
@@ -210,6 +218,10 @@ void concurrency_thread_pool_destroy(ConcurrencyThreadPool *pool) {
     pool->accepting_jobs = 0;
     pool->shutdown_started = 0;
     pool->joined = 0;
+}
+
+int concurrency_thread_pool_current_worker_index(void) {
+    return current_worker_index;
 }
 
 const char *concurrency_thread_pool_shutdown_mode_name(ConcurrencyThreadPoolShutdownMode mode) {

@@ -23,5 +23,7 @@ python scripts/run_edge_failure_cases.py `
 ```
 
 ## 주의
-- `shutdown-during-request`는 `--server-command`가 있어야 자동으로 수행됩니다.
+- 실제 `db_server` 런타임 기준 queue capacity는 `max(worker_count * 4, 8)`입니다.
+- mock 서버 예시는 mock에 넘긴 `--queue-capacity`와 동일한 값을 하네스에도 넘겨야 합니다.
+- `shutdown-during-request`는 `--server-command`가 있어야 자동으로 수행되며, 가능하면 graceful signal을 먼저 보내고 불가능하면 terminate로 fallback합니다.
 - mock 전용 헤더 `X-Mock-Sleep-Ms`는 실제 서버가 무시해도 무방합니다.

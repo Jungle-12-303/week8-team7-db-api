@@ -2,6 +2,8 @@
 
 #include <ctype.h>
 #include <errno.h>
+#include <inttypes.h>
+#include <stdatomic.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -18,6 +20,8 @@
 #else
 #define HTTP_SEND_FLAGS 0
 #endif
+
+static atomic_ullong g_http_request_sequence = 0;
 
 static int http_text_is_blank(const char *text) {
     const unsigned char *cursor = (const unsigned char *)text;
@@ -106,6 +110,53 @@ static void http_sleep_milliseconds(unsigned int sleep_ms) {
 
         requested = remaining;
     }
+}
+
+static uint64_t http_next_request_id(void) {
+    return (uint64_t)atomic_fetch_add_explicit(&g_http_request_sequence, 1u, memory_order_relaxed) + 1u;
+}
+
+static void http_log_request_event(uint64_t req_id,
+                                   const char *event,
+                                   const http_request *request,
+                                   int status_code) {
+    const char *method = "-";
+    const char *path = "-";
+    const char *debug_sleep_ms = "-";
+    char status_text[16];
+    size_t content_length = 0;
+
+    if (request != NULL) {
+        if (request->method[0] != '\0') {
+            method = request->method;
+        }
+        if (request->path[0] != '\0') {
+            path = request->path;
+        }
+        if (request->debug_sleep_ms_present && request->debug_sleep_ms[0] != '\0') {
+            debug_sleep_ms = request->debug_sleep_ms;
+        }
+        content_length = request->content_length;
+    }
+
+    if (status_code > 0) {
+        snprintf(status_text, sizeof(status_text), "%d", status_code);
+    } else {
+        snprintf(status_text, sizeof(status_text), "-");
+    }
+
+    flockfile(stdout);
+    fprintf(stdout,
+            "[HTTP] | req_id=%" PRIu64 " | event=%s | method=%s | path=%s | status=%s | bytes=%zu | debug_sleep_ms=%s |\n",
+            req_id,
+            event,
+            method,
+            path,
+            status_text,
+            content_length,
+            debug_sleep_ms);
+    funlockfile(stdout);
+    fflush(stdout);
 }
 
 static void http_close_client(int client_fd) {
@@ -211,6 +262,50 @@ static int http_write_query_response(int client_fd,
     return http_send_json_response(client_fd, response_text, response_length);
 }
 
+static int http_return_error_response(int client_fd,
+                                      int status_code,
+                                      const char *path,
+                                      const char *error_code,
+                                      const char *message,
+                                      int *status_out) {
+    if (status_out != NULL) {
+        *status_out = status_code;
+    }
+
+    return http_write_error_response(client_fd, status_code, path, error_code, message);
+}
+
+static int http_return_health_response(int client_fd, int *status_out) {
+    if (status_out != NULL) {
+        *status_out = 200;
+    }
+
+    return http_write_health_response(client_fd);
+}
+
+static int http_return_query_response(int client_fd,
+                                      int ok,
+                                      int status_code,
+                                      const char *path,
+                                      const char *error_code,
+                                      const char *message,
+                                      int affected_rows,
+                                      const char *output_text,
+                                      int *status_out) {
+    if (status_out != NULL) {
+        *status_out = status_code;
+    }
+
+    return http_write_query_response(client_fd,
+                                     ok,
+                                     status_code,
+                                     path,
+                                     error_code,
+                                     message,
+                                     affected_rows,
+                                     output_text);
+}
+
 static int http_grow_buffer(char **buffer,
                             size_t *capacity,
                             size_t minimum_capacity,
@@ -247,7 +342,8 @@ static int http_grow_buffer(char **buffer,
 
 static int http_route_request(int client_fd,
                               const http_request *request,
-                              const http_server_dependencies *dependencies) {
+                              const http_server_dependencies *dependencies,
+                              int *status_out) {
     unsigned int debug_sleep_ms = 0;
     http_query_result query_result;
     char execution_error[256];
@@ -256,66 +352,73 @@ static int http_route_request(int client_fd,
 
     if (strcmp(request->path, "/health") == 0) {
         if (strcmp(request->method, "GET") != 0) {
-            return http_write_error_response(client_fd,
-                                             405,
-                                             request->path,
-                                             "method_not_allowed",
-                                             "GET is required for /health");
+            return http_return_error_response(client_fd,
+                                              405,
+                                              request->path,
+                                              "method_not_allowed",
+                                              "GET is required for /health",
+                                              status_out);
         }
 
         if (request->content_length != 0) {
-            return http_write_error_response(client_fd,
-                                             400,
-                                             request->path,
-                                             "invalid_body",
-                                             "/health does not accept a request body");
+            return http_return_error_response(client_fd,
+                                              400,
+                                              request->path,
+                                              "invalid_body",
+                                              "/health does not accept a request body",
+                                              status_out);
         }
 
-        return http_write_health_response(client_fd);
+        return http_return_health_response(client_fd, status_out);
     }
 
     if (strcmp(request->path, "/query") == 0) {
         if (strcmp(request->method, "POST") != 0) {
-            return http_write_error_response(client_fd,
-                                             405,
-                                             request->path,
-                                             "method_not_allowed",
-                                             "POST is required for /query");
+            return http_return_error_response(client_fd,
+                                              405,
+                                              request->path,
+                                              "method_not_allowed",
+                                              "POST is required for /query",
+                                              status_out);
         }
 
         if (!http_content_type_is_sql(request->content_type)) {
-            return http_write_error_response(client_fd,
-                                             415,
-                                             request->path,
-                                             "unsupported_media_type",
-                                             "/query expects a raw SQL body");
+            return http_return_error_response(client_fd,
+                                              415,
+                                              request->path,
+                                              "unsupported_media_type",
+                                              "/query expects a raw SQL body",
+                                              status_out);
         }
 
         if (request->content_length == 0 || http_text_is_blank(request->body)) {
-            return http_write_error_response(client_fd,
-                                             400,
-                                             request->path,
-                                             "invalid_body",
-                                             "request body must contain a SQL statement");
+            return http_return_error_response(client_fd,
+                                              400,
+                                              request->path,
+                                              "invalid_body",
+                                              "request body must contain a SQL statement",
+                                              status_out);
         }
 
         if (dependencies == NULL || dependencies->execute_query == NULL) {
-            return http_write_error_response(client_fd,
-                                             500,
-                                             request->path,
-                                             "missing_dependency",
-                                             "query executor callback is not configured");
+            return http_return_error_response(client_fd,
+                                              500,
+                                              request->path,
+                                              "missing_dependency",
+                                              "query executor callback is not configured",
+                                              status_out);
         }
 
         if (!http_parse_debug_sleep_ms(request,
                                        &debug_sleep_ms,
                                        execution_error,
                                        sizeof(execution_error))) {
-            return http_write_error_response(client_fd,
-                                             400,
-                                             request->path,
-                                             "invalid_header",
-                                             execution_error);
+            return http_return_error_response(client_fd,
+                                              400,
+                                              request->path,
+                                              "invalid_header",
+                                              execution_error,
+                                              status_out);
         }
 
         http_sleep_milliseconds(debug_sleep_ms);
@@ -327,13 +430,14 @@ static int http_route_request(int client_fd,
                                          sizeof(execution_error))) {
             int sent;
 
-            sent = http_write_error_response(client_fd,
-                                             500,
-                                             request->path,
-                                             "query_execution_failed",
-                                             execution_error[0] == '\0'
-                                                 ? "query execution callback failed"
-                                                 : execution_error);
+            sent = http_return_error_response(client_fd,
+                                              500,
+                                              request->path,
+                                              "query_execution_failed",
+                                              execution_error[0] == '\0'
+                                                  ? "query execution callback failed"
+                                                  : execution_error,
+                                              status_out);
             if (dependencies->cleanup_query_result != NULL) {
                 dependencies->cleanup_query_result(dependencies->user_data, &query_result);
             }
@@ -341,14 +445,15 @@ static int http_route_request(int client_fd,
         }
 
         if (!query_result.ok) {
-            int sent = http_write_query_response(client_fd,
-                                                 0,
-                                                 400,
-                                                 request->path,
-                                                 "query_failed",
-                                                 query_result.message == NULL ? "query execution failed" : query_result.message,
-                                                 query_result.affected_rows,
-                                                 query_result.output_text);
+            int sent = http_return_query_response(client_fd,
+                                                  0,
+                                                  400,
+                                                  request->path,
+                                                  "query_failed",
+                                                  query_result.message == NULL ? "query execution failed" : query_result.message,
+                                                  query_result.affected_rows,
+                                                  query_result.output_text,
+                                                  status_out);
             if (dependencies->cleanup_query_result != NULL) {
                 dependencies->cleanup_query_result(dependencies->user_data, &query_result);
             }
@@ -356,14 +461,15 @@ static int http_route_request(int client_fd,
         }
 
         {
-            int sent = http_write_query_response(client_fd,
-                                                 1,
-                                                 200,
-                                                 request->path,
-                                                 NULL,
-                                                 query_result.message == NULL ? "query completed" : query_result.message,
-                                                 query_result.affected_rows,
-                                                 query_result.output_text);
+            int sent = http_return_query_response(client_fd,
+                                                  1,
+                                                  200,
+                                                  request->path,
+                                                  NULL,
+                                                  query_result.message == NULL ? "query completed" : query_result.message,
+                                                  query_result.affected_rows,
+                                                  query_result.output_text,
+                                                  status_out);
             if (dependencies->cleanup_query_result != NULL) {
                 dependencies->cleanup_query_result(dependencies->user_data, &query_result);
             }
@@ -371,11 +477,12 @@ static int http_route_request(int client_fd,
         }
     }
 
-    return http_write_error_response(client_fd,
-                                     404,
-                                     request->path,
-                                     "path_not_found",
-                                     "unsupported endpoint");
+    return http_return_error_response(client_fd,
+                                      404,
+                                      request->path,
+                                      "path_not_found",
+                                      "unsupported endpoint",
+                                      status_out);
 }
 
 int http_server_handle_client(int client_fd,
@@ -388,7 +495,9 @@ int http_server_handle_client(int client_fd,
     size_t request_length = 0;
     size_t max_request_bytes = HTTP_DEFAULT_MAX_REQUEST_BYTES;
     int success = 0;
+    int response_status_code = 0;
     http_request request;
+    uint64_t req_id = 0;
 
     memset(&request, 0, sizeof(request));
 
@@ -497,7 +606,11 @@ int http_server_handle_client(int client_fd,
         goto cleanup;
     }
 
-    success = http_route_request(client_fd, &request, dependencies);
+    req_id = http_next_request_id();
+    http_log_request_event(req_id, "요청 수신", &request, 0);
+
+    success = http_route_request(client_fd, &request, dependencies, &response_status_code);
+    http_log_request_event(req_id, "응답 완료", &request, response_status_code);
 
 cleanup:
     http_request_free(&request);

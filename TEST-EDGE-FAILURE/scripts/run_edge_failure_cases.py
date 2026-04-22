@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import concurrent.futures
 import json
+import signal
 import shlex
 import socket
 import subprocess
@@ -133,6 +134,16 @@ def body_has_error_payload(body_text: str) -> bool:
     return False
 
 
+def parse_json_body(body_text: str) -> dict[str, Any] | None:
+    if not body_text.strip():
+        return None
+    try:
+        parsed = json.loads(body_text)
+    except json.JSONDecodeError:
+        return None
+    return parsed if isinstance(parsed, dict) else None
+
+
 def count_statuses(results: list[dict[str, Any]]) -> dict[str, int]:
     counts: dict[str, int] = {}
     for result in results:
@@ -167,11 +178,15 @@ class ManagedServer:
         if self.process and self.process.poll() is None:
             return
         command = split_command(self.args.server_command)
+        creationflags = 0
+        if sys.platform == "win32":
+            creationflags = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
         self.process = subprocess.Popen(
             command,
             cwd=str(PROJECT_ROOT),
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
+            creationflags=creationflags,
         )
         deadline = time.monotonic() + self.args.startup_timeout_sec
         last_probe: dict[str, Any] | None = None
@@ -185,19 +200,36 @@ class ManagedServer:
             time.sleep(0.1)
         raise RuntimeError(f"Managed server did not become healthy: {last_probe}")
 
-    def stop(self) -> None:
+    def request_stop(self, graceful: bool = True) -> None:
         if not self.process:
             return
         if self.process.poll() is not None:
             self.process = None
             return
-        self.process.terminate()
+        sent_signal = False
+        if graceful:
+            try:
+                if sys.platform == "win32":
+                    ctrl_break = getattr(signal, "CTRL_BREAK_EVENT", None)
+                    if ctrl_break is not None:
+                        self.process.send_signal(ctrl_break)
+                        sent_signal = True
+                else:
+                    self.process.send_signal(signal.SIGTERM)
+                    sent_signal = True
+            except (OSError, ValueError):
+                sent_signal = False
+        if not sent_signal:
+            self.process.terminate()
         try:
             self.process.wait(timeout=3.0)
         except subprocess.TimeoutExpired:
             self.process.kill()
             self.process.wait(timeout=2.0)
         self.process = None
+
+    def stop(self) -> None:
+        self.request_stop(graceful=False)
 
     def restart(self) -> None:
         self.stop()
@@ -386,6 +418,37 @@ def run_invalid_sql_case(case: dict[str, Any], args: argparse.Namespace) -> Case
     return finalize_case(case, args, passed, details)
 
 
+def run_invalid_debug_header_case(case: dict[str, Any], args: argparse.Namespace) -> CaseResult:
+    expect = case["expect"]
+    response = send_http_request(
+        args.host,
+        args.port,
+        "POST",
+        args.query_path,
+        body=case.get("sql", "SELECT * FROM student;").encode("utf-8"),
+        headers={
+            "Content-Type": "text/plain; charset=utf-8",
+            case.get("header_name", "X-Debug-Sleep-Ms"): case.get("header_value", "10001"),
+        },
+        timeout_sec=args.request_timeout_sec,
+    )
+    parsed_body = parse_json_body(response["body_text"])
+    passed = response["status"] in expect["statuses"]
+    if expect.get("require_error_payload"):
+        passed = passed and body_has_error_payload(response["body_text"])
+    required_error_code = expect.get("require_error_code")
+    if required_error_code:
+        passed = passed and parsed_body is not None and parsed_body.get("error_code") == required_error_code
+    details = {
+        "status": response["status"],
+        "transport_error": response["transport_error"],
+        "body_preview": response["body_text"][:200],
+    }
+    if parsed_body is not None:
+        details["error_code"] = parsed_body.get("error_code")
+    return finalize_case(case, args, passed, details)
+
+
 def send_streaming_request(
     host: str,
     port: int,
@@ -463,7 +526,7 @@ def run_shutdown_during_request_case(
     )
     worker.start()
     time.sleep(case.get("shutdown_after_sec", 0.35))
-    manager.stop()
+    manager.request_stop(graceful=True)
     worker.join(timeout=max(args.request_timeout_sec, 4.0))
     if case.get("restart_after", True):
         manager.start()
@@ -496,6 +559,8 @@ def run_case(case: dict[str, Any], args: argparse.Namespace, manager: ManagedSer
         return run_shutdown_during_request_case(case, args, manager)
     if case_type == "invalid_sql":
         return run_invalid_sql_case(case, args)
+    if case_type == "invalid_debug_header":
+        return run_invalid_debug_header_case(case, args)
     return skipped_case(case, f"Unsupported case type: {case_type}")
 
 

@@ -322,6 +322,56 @@ def compute_phase_parallelism(requests: list[dict[str, Any]]) -> int:
     return max_parallel
 
 
+def build_phase_timeline(
+    phase_started_at: float,
+    requests: list[dict[str, Any]],
+    max_parallel: int,
+) -> tuple[list[dict[str, Any]], float, float, bool]:
+    timeline: list[dict[str, Any]] = []
+    relative_start_values: list[float] = []
+    relative_end_values: list[float] = []
+
+    for request in requests:
+        relative_start_ms = (request["started_at"] - phase_started_at) * 1000.0
+        relative_end_ms = (request["ended_at"] - phase_started_at) * 1000.0
+        request["relative_start_ms"] = round(relative_start_ms, 3)
+        request["relative_end_ms"] = round(relative_end_ms, 3)
+        relative_start_values.append(relative_start_ms)
+        relative_end_values.append(relative_end_ms)
+
+        timeline.append(
+            {
+                "offset_ms": round(relative_start_ms, 3),
+                "event": "START",
+                "request_name": request["name"],
+                "status": None,
+                "success": None,
+            }
+        )
+        timeline.append(
+            {
+                "offset_ms": round(relative_end_ms, 3),
+                "event": "END",
+                "request_name": request["name"],
+                "status": request["status"],
+                "success": request["success"],
+            }
+        )
+
+    timeline.sort(key=lambda item: (item["offset_ms"], 0 if item["event"] == "START" else 1, item["request_name"]))
+
+    if not relative_start_values:
+        return timeline, 0.0, 0.0, False
+
+    start_spread_ms = max(relative_start_values) - min(relative_start_values)
+    overlap_window_ms = 0.0
+    if len(relative_start_values) > 1:
+        overlap_window_ms = max(0.0, min(relative_end_values) - max(relative_start_values))
+
+    concurrency_confirmed = len(relative_start_values) > 1 and max_parallel > 1 and overlap_window_ms > 0.0
+    return timeline, round(start_spread_ms, 3), round(overlap_window_ms, 3), concurrency_confirmed
+
+
 def build_request_variables(run_id: str, phase_name: str, request_index: int, request_name: str) -> dict[str, str]:
     return {
         "run_id": run_id,
@@ -394,6 +444,11 @@ def run_phase(
     ordered_results = sorted(results, key=lambda item: item["started_at"])
     success_count = sum(1 for item in ordered_results if item["success"])
     max_parallel = compute_phase_parallelism(ordered_results) if ordered_results else 0
+    timeline, start_spread_ms, overlap_window_ms, concurrency_confirmed = build_phase_timeline(
+        started_at,
+        ordered_results,
+        max_parallel,
+    )
 
     return {
         "name": phase["name"],
@@ -403,6 +458,10 @@ def run_phase(
         "failure_count": len(ordered_results) - success_count,
         "elapsed_ms": round((ended_at - started_at) * 1000.0, 3),
         "max_parallel": max_parallel,
+        "start_spread_ms": start_spread_ms,
+        "overlap_window_ms": overlap_window_ms,
+        "concurrency_confirmed": concurrency_confirmed,
+        "timeline": timeline,
         "requests": ordered_results,
     }
 
@@ -506,6 +565,13 @@ def run_assertions(case_data: dict[str, Any], phase_results: list[dict[str, Any]
                 phase = phase_map[assertion["phase"]]
                 success = phase["max_parallel"] > 1
                 message = f"{assertion['phase']} max_parallel={phase['max_parallel']}"
+            elif assertion_type == "start_spread_at_most":
+                phase = phase_map[assertion["phase"]]
+                success = phase["start_spread_ms"] <= float(assertion["max_start_spread_ms"])
+                message = (
+                    f"{assertion['phase']} start_spread_ms={phase['start_spread_ms']:.3f}, "
+                    f"required<={float(assertion['max_start_spread_ms']):.3f}"
+                )
             else:
                 message = f"unsupported assertion type {assertion_type}"
         except KeyError as exc:
@@ -596,11 +662,19 @@ def print_report(report: dict[str, Any], print_response_bodies: bool) -> None:
             f"{phase['success_count']}/{phase['request_count']} passed, "
             f"elapsed_ms={phase['elapsed_ms']}, max_parallel={phase['max_parallel']}"
         )
+        print(
+            f"    timing: start_spread_ms={phase['start_spread_ms']}, "
+            f"overlap_window_ms={phase['overlap_window_ms']}, "
+            f"concurrency_confirmed={phase['concurrency_confirmed']}"
+        )
         for request in phase["requests"]:
             request_outcome = "ok" if request["success"] else "fail"
             print(
-                f"    {request['name']}: {request_outcome}, status={request['status']}, "
-                f"elapsed_ms={request['elapsed_ms']}"
+                f"    row {request['name']:<24} | "
+                f"start=+{request['relative_start_ms']:>8.3f}ms | "
+                f"end=+{request['relative_end_ms']:>8.3f}ms | "
+                f"elapsed={request['elapsed_ms']:>8.3f}ms | "
+                f"status={str(request['status']):>3} | {request_outcome}"
             )
             if request["transport_error"]:
                 print(f"      transport_error: {request['transport_error']}")
@@ -608,6 +682,19 @@ def print_report(report: dict[str, Any], print_response_bodies: bool) -> None:
                 print(f"      expectation_failure: {failure}")
             if print_response_bodies:
                 print(f"      body: {request['body']}")
+        if phase["timeline"]:
+            print("    timeline:")
+            for event in phase["timeline"]:
+                if event["event"] == "START":
+                    print(
+                        f"      t=+{event['offset_ms']:>8.3f}ms | START | {event['request_name']}"
+                    )
+                else:
+                    event_outcome = "ok" if event["success"] else "fail"
+                    print(
+                        f"      t=+{event['offset_ms']:>8.3f}ms | END   | {event['request_name']} | "
+                        f"status={str(event['status']):>3} | {event_outcome}"
+                    )
 
     for assertion in report["assertions"]:
         assertion_outcome = "ok" if assertion["success"] else "fail"
@@ -638,6 +725,33 @@ class MockRequestHandler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
+
+    def _get_debug_sleep_ms(self) -> tuple[int | None, dict[str, Any] | None]:
+        raw_value = self.headers.get("X-Debug-Sleep-Ms")
+        if raw_value is None:
+            return 0, None
+
+        try:
+            value = int(raw_value.strip())
+        except ValueError:
+            return None, {
+                "ok": False,
+                "path": "/query",
+                "status_code": 400,
+                "error_code": "invalid_header",
+                "message": "X-Debug-Sleep-Ms must be an integer between 0 and 10000",
+            }
+
+        if value < 0 or value > 10000:
+            return None, {
+                "ok": False,
+                "path": "/query",
+                "status_code": 400,
+                "error_code": "invalid_header",
+                "message": "X-Debug-Sleep-Ms must be between 0 and 10000 milliseconds",
+            }
+
+        return value, None
 
     def do_GET(self) -> None:  # noqa: N802
         if self.path != "/health":
@@ -726,9 +840,21 @@ class MockRequestHandler(BaseHTTPRequestHandler):
 
         normalized = sql.strip().upper()
         if normalized.startswith("SELECT"):
+            debug_sleep_ms, error_payload = self._get_debug_sleep_ms()
+            if error_payload is not None:
+                self._send_json(400, error_payload)
+                return
+            if debug_sleep_ms:
+                time.sleep(debug_sleep_ms / 1000.0)
             self._handle_select(sql)
             return
         if normalized.startswith("INSERT"):
+            debug_sleep_ms, error_payload = self._get_debug_sleep_ms()
+            if error_payload is not None:
+                self._send_json(400, error_payload)
+                return
+            if debug_sleep_ms:
+                time.sleep(debug_sleep_ms / 1000.0)
             self._handle_insert(sql)
             return
 
