@@ -1,5 +1,6 @@
 # Build outputs
 build/
+/benchmark-workdir/
 
 # C / native binaries and objects
 *.o

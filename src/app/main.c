@@ -46,24 +46,6 @@
 #define IS_DIRECTORY_FILE(mode) S_ISDIR(mode)
 #endif
 
-// 전달받은 인자가 실제 파일 경로인지 간단히 검사합니다.
-/* 단순히 "이 경로를 파일로 열 수 있는가"를 확인하는 작은 헬퍼 함수다. */
-static int file_exists(const char *path) {
-    // 파일을 열어 존재 여부를 확인할 포인터입니다.
-    FILE *file;
-
-    // 읽기 모드로 파일을 열어 봅니다.
-    file = fopen(path, "rb");
-    // 열기에 성공하면 파일이 존재합니다.
-    if (file != NULL) {
-        fclose(file);
-        return 1;
-    }
-
-    // 열지 못했으면 파일이 없다고 봅니다.
-    return 0;
-}
-
 /*
  * bare argument가 "파일 경로인지" 아니면 "그냥 SQL 문자열인지" 판단한다.
  *
@@ -83,18 +65,11 @@ static int resolve_bare_argument_file(const char *path, int *should_read_file, c
     *should_read_file = 0;
 
     /*
-     * 가장 쉬운 경우:
-     * 지금 인자가 실제로 존재하는 파일이면 곧바로 파일 입력 모드로 확정한다.
-     * 예: sqlparser examples/select_all_users.sql
-     */
-    if (file_exists(path)) {
-        *should_read_file = 1;
-        return 1;
-    }
-
-    /*
-     * file_exists()는 실패했지만 stat()은 성공한 경우다.
-     * 즉, "경로 자체는 존재한다"는 뜻이므로
+     * 먼저 stat()으로 경로 종류를 확인한다.
+     * macOS처럼 디렉터리 fopen()이 성공처럼 보이는 환경도 있으므로,
+     * 파일을 열어 보기 전에 디렉터리/일반 파일 여부를 분리한다.
+     *
+     * stat()이 성공했다는 것은 "경로 자체는 존재한다"는 뜻이므로
      * 왜 파일로 읽을 수 없는지 세부적으로 나눠서 에러를 만든다.
      */
     if (STAT_FUNC(path, &info) == 0) {
@@ -113,13 +88,8 @@ static int resolve_bare_argument_file(const char *path, int *should_read_file, c
             return 0;
         }
 
-        /*
-         * 여기까지 왔다는 것은 경로는 존재하지만
-         * 정상적인 SQL 파일로 접근할 수 없는 상황으로 간주한다.
-         * 예: 권한 문제 같은 시스템 수준 오류
-         */
-        format_system_error(error, error_size, "failed to access SQL file", path);
-        return 0;
+        *should_read_file = 1;
+        return 1;
     }
 
     /*

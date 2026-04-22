@@ -24,6 +24,18 @@
 #include <stdlib.h>
 // strcmp, strchr를 쓰기 위해 포함한다.
 #include <string.h>
+#include <sys/stat.h>
+
+#ifdef _MSC_VER
+#include <io.h>
+#define STAT_STRUCT struct _stat
+#define STAT_FUNC _stat
+#define IS_REGULAR_FILE(mode) (((mode) & _S_IFMT) == _S_IFREG)
+#else
+#define STAT_STRUCT struct stat
+#define STAT_FUNC stat
+#define IS_REGULAR_FILE(mode) S_ISREG(mode)
+#endif
 
 /* SchemaResult 실패 메시지를 공통 형식으로 채우는 헬퍼 함수다. */
 static void set_schema_error(SchemaResult *result, const char *message) {
@@ -115,6 +127,7 @@ static int has_meta_extension(const char *filename) {
 static int file_declares_table(const char *path, const char *table_name, int *matches, char *message, size_t message_size) {
     // meta 파일을 읽을 핸들이다.
     FILE *file;
+    STAT_STRUCT info;
     // 한 줄씩 읽을 버퍼다.
     char line[4096];
     // 앞뒤 공백을 제거한 문자열이다.
@@ -123,6 +136,15 @@ static int file_declares_table(const char *path, const char *table_name, int *ma
     char *separator;
     // 일치 여부를 담는 플래그다.
     *matches = 0;
+
+    /*
+     * 디렉터리 같은 후보를 fopen()으로 판별하면 OS마다 결과가 달라질 수 있다.
+     * 먼저 일반 파일인지 확인해서 alias 탐색의 실패 메시지를 안정적으로 만든다.
+     */
+    if (STAT_FUNC(path, &info) != 0 || !IS_REGULAR_FILE(info.st_mode)) {
+        format_system_error(message, message_size, "failed to open schema meta file", path);
+        return 0;
+    }
 
     file = fopen(path, "rb");
     if (file == NULL) {
