@@ -7,6 +7,7 @@
 #include <limits.h>
 #include <netinet/in.h>
 #include <signal.h>
+#include <stdatomic.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -27,9 +28,56 @@
 typedef struct {
     DbServerRuntime *runtime;
     int client_fd;
+    unsigned long long request_id;
 } DbServerClientJob;
 
 static DbServerRuntime *g_signal_runtime = NULL;
+static _Thread_local unsigned long long g_runtime_request_id = 0;
+static atomic_ullong g_runtime_next_request_id = 1;
+static atomic_uint g_runtime_active_workers = 0;
+
+static void runtime_log_event(unsigned long long request_id, const char *event, const char *details)
+{
+    fprintf(stdout, "component=runtime event=%s", event == NULL ? "unknown" : event);
+    if (request_id != 0ULL) {
+        fprintf(stdout, " request_id=%llu", request_id);
+    }
+    if (details != NULL && details[0] != '\0') {
+        fprintf(stdout, " %s", details);
+    }
+    fputc('\n', stdout);
+    fflush(stdout);
+}
+
+static void runtime_log_lock_event(
+    unsigned long long request_id,
+    const char *event,
+    ConcurrencyLockManager *manager,
+    ConcurrencyLockMode mode)
+{
+    char details[256];
+    size_t active_readers = 0;
+    size_t waiting_writers = 0;
+    int writer_active = 0;
+
+    if (manager != NULL && manager->ready) {
+        pthread_mutex_lock(&manager->mutex);
+        active_readers = manager->active_readers;
+        waiting_writers = manager->waiting_writers;
+        writer_active = manager->writer_active;
+        pthread_mutex_unlock(&manager->mutex);
+    }
+
+    snprintf(details,
+             sizeof(details),
+             "mode=%s policy=%s active_readers=%zu waiting_writers=%zu writer_active=%d",
+             concurrency_lock_mode_name(mode),
+             manager == NULL ? "unknown" : concurrency_lock_policy_name(manager->policy),
+             active_readers,
+             waiting_writers,
+             writer_active);
+    runtime_log_event(request_id, event, details);
+}
 
 static void close_fd_if_open(int *fd)
 {
@@ -196,6 +244,7 @@ static int runtime_execute_query(void *user_data,
                                  size_t error_size)
 {
     DbServerRuntime *runtime = (DbServerRuntime *)user_data;
+    unsigned long long request_id = g_runtime_request_id;
     ConcurrencyLockMode lock_mode;
     server_core_request request;
     server_core_result core_result;
@@ -214,9 +263,12 @@ static int runtime_execute_query(void *user_data,
 
     server_core_result_init(&core_result);
     lock_mode = concurrency_lock_mode_from_sql(sql);
+    runtime_log_lock_event(request_id, "lock_wait", &runtime->thread_pool.lock_manager, lock_mode);
     concurrency_lock_manager_acquire(&runtime->thread_pool.lock_manager, lock_mode);
+    runtime_log_lock_event(request_id, "lock_acquired", &runtime->thread_pool.lock_manager, lock_mode);
     status = server_core_execute(&runtime->engine, &request, &core_result);
     concurrency_lock_manager_release(&runtime->thread_pool.lock_manager, lock_mode);
+    runtime_log_lock_event(request_id, "lock_released", &runtime->thread_pool.lock_manager, lock_mode);
 
     if (status != SERVER_CORE_STATUS_OK) {
         snprintf(error,
@@ -259,6 +311,8 @@ static int run_client_job(void *context)
     DbServerClientJob *job = (DbServerClientJob *)context;
     int client_fd;
     int success;
+    unsigned int active_workers;
+    char details[160];
 
     if (job == NULL || job->runtime == NULL || job->client_fd < 0) {
         return 1;
@@ -266,7 +320,21 @@ static int run_client_job(void *context)
 
     client_fd = job->client_fd;
     job->client_fd = -1;
+    g_runtime_request_id = job->request_id;
+    active_workers = atomic_fetch_add_explicit(&g_runtime_active_workers, 1u, memory_order_relaxed) + 1u;
+    snprintf(details,
+             sizeof(details),
+             "active_workers=%u queue_size=%zu",
+             active_workers,
+             concurrency_job_queue_size(&job->runtime->thread_pool.queue));
+    runtime_log_event(job->request_id, "worker_start", details);
+
     success = http_server_handle_client(client_fd, &job->runtime->http_config, &job->runtime->http_dependencies);
+
+    active_workers = atomic_fetch_sub_explicit(&g_runtime_active_workers, 1u, memory_order_relaxed) - 1u;
+    snprintf(details, sizeof(details), "active_workers=%u ok=%d", active_workers, success ? 1 : 0);
+    runtime_log_event(job->request_id, "worker_done", details);
+    g_runtime_request_id = 0;
     return success ? 0 : 1;
 }
 
@@ -327,6 +395,7 @@ static void accept_client(DbServerRuntime *runtime, int client_fd)
     DbServerClientJob *job_context;
     ConcurrencyJob job;
     ConcurrencyJobQueueStatus status;
+    char details[160];
 
     job_context = (DbServerClientJob *)calloc(1, sizeof(*job_context));
     if (job_context == NULL) {
@@ -336,6 +405,14 @@ static void accept_client(DbServerRuntime *runtime, int client_fd)
 
     job_context->runtime = runtime;
     job_context->client_fd = client_fd;
+    job_context->request_id = atomic_fetch_add_explicit(&g_runtime_next_request_id, 1u, memory_order_relaxed);
+
+    snprintf(details,
+             sizeof(details),
+             "queue_size=%zu active_workers=%u",
+             concurrency_job_queue_size(&runtime->thread_pool.queue),
+             atomic_load_explicit(&g_runtime_active_workers, memory_order_relaxed));
+    runtime_log_event(job_context->request_id, "request_accepted", details);
 
     memset(&job, 0, sizeof(job));
     job.lock_mode = CONCURRENCY_LOCK_MODE_NONE;
@@ -345,9 +422,22 @@ static void accept_client(DbServerRuntime *runtime, int client_fd)
 
     status = concurrency_thread_pool_try_submit(&runtime->thread_pool, &job);
     if (status == CONCURRENCY_JOB_QUEUE_OK) {
+        snprintf(details,
+                 sizeof(details),
+                 "queue_size=%zu active_workers=%u",
+                 concurrency_job_queue_size(&runtime->thread_pool.queue),
+                 atomic_load_explicit(&g_runtime_active_workers, memory_order_relaxed));
+        runtime_log_event(job_context->request_id, "request_queued", details);
         return;
     }
 
+    snprintf(details,
+             sizeof(details),
+             "queue_status=%d queue_size=%zu active_workers=%u",
+             (int)status,
+             concurrency_job_queue_size(&runtime->thread_pool.queue),
+             atomic_load_explicit(&g_runtime_active_workers, memory_order_relaxed));
+    runtime_log_event(job_context->request_id, "request_rejected", details);
     reject_client_with_status(client_fd, status);
     concurrency_job_finish(&job, CONCURRENCY_JOB_RESULT_REJECTED, -1, 0);
 }
@@ -389,6 +479,16 @@ int db_server_runtime_start(const ServerRuntimeConfig *config, void *server_cont
         return 0;
     }
     runtime->thread_pool_started = 1;
+    {
+        char details[128];
+        snprintf(details,
+                 sizeof(details),
+                 "workers=%d queue_capacity=%zu lock_policy=%s",
+                 config->worker_count,
+                 queue_capacity,
+                 concurrency_lock_policy_name(CONCURRENCY_LOCK_POLICY_SERIAL_ALL));
+        runtime_log_event(0, "runtime_started", details);
+    }
 
     runtime->listener_fd = create_listener_socket(config->port, error, error_size);
     if (runtime->listener_fd < 0) {
