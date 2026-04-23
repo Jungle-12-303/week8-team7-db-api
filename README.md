@@ -347,6 +347,7 @@ curl --fail --silent --show-error \
   "output_text": ""
 }
 ```
+<img width="1693" height="929" alt="image" src="https://github.com/user-attachments/assets/f26fc0d8-fa22-412a-9658-06838eecae89" />
 
 ## 7. 회고
 
