@@ -12,6 +12,8 @@
 #include <sys/socket.h>
 #include <unistd.h>
 
+#include "thread_pool.h"
+
 #define HTTP_RECEIVE_CHUNK_BYTES 4096u
 #define HTTP_DEBUG_SLEEP_MAX_MS 10000u
 
@@ -22,6 +24,15 @@
 #endif
 
 static atomic_ullong g_http_request_sequence = 0;
+
+void http_request_trace_init(http_request_trace *trace) {
+    if (trace == NULL) {
+        return;
+    }
+
+    memset(trace, 0, sizeof(*trace));
+    trace->worker_index = -1;
+}
 
 static int http_text_is_blank(const char *text) {
     const unsigned char *cursor = (const unsigned char *)text;
@@ -116,14 +127,48 @@ static uint64_t http_next_request_id(void) {
     return (uint64_t)atomic_fetch_add_explicit(&g_http_request_sequence, 1u, memory_order_relaxed) + 1u;
 }
 
+static void http_trace_set_status(http_request_trace *trace, int status_code) {
+    if (trace == NULL) {
+        return;
+    }
+
+    trace->status_code = status_code;
+}
+
+static void http_trace_set_worker_index(http_request_trace *trace, int worker_index) {
+    if (trace == NULL || worker_index < 0) {
+        return;
+    }
+
+    trace->worker_index = worker_index;
+}
+
+static void http_trace_copy_request(http_request_trace *trace, const http_request *request) {
+    if (trace == NULL || request == NULL) {
+        return;
+    }
+
+    trace->content_length = request->content_length;
+    snprintf(trace->method, sizeof(trace->method), "%s", request->method);
+    snprintf(trace->path, sizeof(trace->path), "%s", request->path);
+    if (request->debug_sleep_ms_present) {
+        snprintf(trace->debug_sleep_ms, sizeof(trace->debug_sleep_ms), "%s", request->debug_sleep_ms);
+    } else {
+        trace->debug_sleep_ms[0] = '\0';
+    }
+}
+
 static void http_log_request_event(uint64_t req_id,
                                    const char *event,
                                    const http_request *request,
+                                   const http_request_trace *trace,
                                    int status_code) {
     const char *method = "-";
     const char *path = "-";
     const char *debug_sleep_ms = "-";
+    int worker_index = -1;
     char status_text[16];
+    char worker_text[16];
     size_t content_length = 0;
 
     if (request != NULL) {
@@ -139,17 +184,32 @@ static void http_log_request_event(uint64_t req_id,
         content_length = request->content_length;
     }
 
+    if (trace != NULL) {
+        if (trace->worker_index >= 0) {
+            worker_index = trace->worker_index;
+        }
+    } else {
+        worker_index = concurrency_thread_pool_current_worker_index();
+    }
+
     if (status_code > 0) {
         snprintf(status_text, sizeof(status_text), "%d", status_code);
     } else {
         snprintf(status_text, sizeof(status_text), "-");
     }
 
+    if (worker_index >= 0) {
+        snprintf(worker_text, sizeof(worker_text), "%d", worker_index);
+    } else {
+        snprintf(worker_text, sizeof(worker_text), "-");
+    }
+
     flockfile(stdout);
     fprintf(stdout,
-            "[HTTP] | req_id=%" PRIu64 " | event=%s | method=%s | path=%s | status=%s | bytes=%zu | debug_sleep_ms=%s |\n",
+            "[HTTP] | req_id=%" PRIu64 " | event=%s | thread=%s | method=%s | path=%s | status=%s | bytes=%zu | debug_sleep_ms=%s |\n",
             req_id,
             event,
+            worker_text,
             method,
             path,
             status_text,
@@ -487,7 +547,8 @@ static int http_route_request(int client_fd,
 
 int http_server_handle_client(int client_fd,
                               const http_server_config *config,
-                              const http_server_dependencies *dependencies) {
+                              const http_server_dependencies *dependencies,
+                              http_request_trace *trace) {
     char parse_error[256];
     char *request_buffer = NULL;
     size_t buffer_capacity = 0;
@@ -500,6 +561,16 @@ int http_server_handle_client(int client_fd,
     uint64_t req_id = 0;
 
     memset(&request, 0, sizeof(request));
+
+    if (trace != NULL) {
+        if (trace->worker_index < 0) {
+            http_trace_set_worker_index(trace, concurrency_thread_pool_current_worker_index());
+        }
+
+        if (trace->req_id == 0) {
+            trace->req_id = http_next_request_id();
+        }
+    }
 
     if (config != NULL && config->max_request_bytes > 0) {
         max_request_bytes = config->max_request_bytes;
@@ -515,12 +586,14 @@ int http_server_handle_client(int client_fd,
                               buffer_length + 1u,
                               max_request_bytes)) {
             if (buffer_length >= max_request_bytes) {
+                http_trace_set_status(trace, 413);
                 http_write_error_response(client_fd,
                                           413,
                                           "",
                                           "payload_too_large",
                                           "request exceeds the configured size limit");
             } else {
+                http_trace_set_status(trace, 500);
                 http_write_error_response(client_fd,
                                           500,
                                           "",
@@ -540,6 +613,7 @@ int http_server_handle_client(int client_fd,
                 continue;
             }
 
+            http_trace_set_status(trace, 500);
             http_write_error_response(client_fd,
                                       500,
                                       "",
@@ -552,6 +626,7 @@ int http_server_handle_client(int client_fd,
             if (buffer_length == 0) {
                 success = 1;
             } else {
+                http_trace_set_status(trace, 400);
                 http_write_error_response(client_fd,
                                           400,
                                           "",
@@ -571,6 +646,7 @@ int http_server_handle_client(int client_fd,
                                           sizeof(probe_error));
 
         if (request_length > max_request_bytes) {
+            http_trace_set_status(trace, 413);
             http_write_error_response(client_fd,
                                       413,
                                       "",
@@ -580,6 +656,7 @@ int http_server_handle_client(int client_fd,
         }
 
         if (probe_result == HTTP_PROBE_INVALID) {
+            http_trace_set_status(trace, 400);
             http_write_error_response(client_fd,
                                       400,
                                       "",
@@ -598,6 +675,7 @@ int http_server_handle_client(int client_fd,
                             &request,
                             parse_error,
                             sizeof(parse_error))) {
+        http_trace_set_status(trace, 400);
         http_write_error_response(client_fd,
                                   400,
                                   "",
@@ -606,11 +684,17 @@ int http_server_handle_client(int client_fd,
         goto cleanup;
     }
 
-    req_id = http_next_request_id();
-    http_log_request_event(req_id, "요청 수신", &request, 0);
+    if (trace != NULL) {
+        http_trace_copy_request(trace, &request);
+        req_id = trace->req_id;
+    } else {
+        req_id = http_next_request_id();
+    }
+    http_log_request_event(req_id, "요청 수신", &request, trace, 0);
 
     success = http_route_request(client_fd, &request, dependencies, &response_status_code);
-    http_log_request_event(req_id, "응답 완료", &request, response_status_code);
+    http_trace_set_status(trace, response_status_code);
+    http_log_request_event(req_id, "응답 완료", &request, trace, response_status_code);
 
 cleanup:
     http_request_free(&request);

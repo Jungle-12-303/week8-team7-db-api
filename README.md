@@ -1,7 +1,6 @@
 # 미니 DBMS API 서버
 
 ## 1. 프로젝트 소개
-
 이 프로젝트는 기존 SQL 엔진인 `week8-team7-db-api`를 HTTP API 서버로 감싼 미니 DBMS 서버입니다.
 
 기존 엔진은 SQL 파싱, 실행, CSV 기반 저장소 접근을 담당하고, 루트 프로젝트는 그 엔진을 서버 환경에서 사용할 수 있도록 다음 기능을 추가합니다.
@@ -18,6 +17,27 @@
 현재 동시성 모델의 핵심은 **요청은 동시에 받고, 실제 DB 실행 구간은 안전하게 순차 처리**하는 것입니다.
 
 즉 API 서버 레벨에서는 여러 요청을 동시에 받아 worker에 배정하지만, DB 엔진 실행은 `CONCURRENCY_LOCK_POLICY_SERIAL_ALL` 정책으로 보호합니다.
+
+AI는 루트 폴더에 에이전트가 관리 및 마무리 작업을 하고 하위 폴더 서브 에이전트가  기능을 하나씩 구현하는 방식으로 하였습니다.
+
+
+  ```mermaid
+  flowchart TB
+    subgraph ROOT["Root Agent"]
+      direction TB
+
+      CORE["<b>Sub Agents</b>\nSERVER-CORE"]
+      HTTP["<b>Sub Agents</b>\nSERVER-HTTP"]
+      CONC["<b>Sub Agents</b>\nSERVER-CONCURRENCY"]
+      RUNTIME["<b>Sub Agents</b>\nSERVER-RUNTIME"]
+      TESTC["<b>Sub Agents</b>\nTEST-CONCURRENCY"]
+      TCONC["<b>Sub Agents</b>\nTEST-CONCURRENCY"]
+      THTTP["<b>Sub Agents</b>\nTEST-HTTP-FUNCTIONAL"]
+      TENGI["<b>Sub Agents</b>\nTEST-ENGINE-ADAPTER"]
+      TEDGE["<b>Sub Agents</b>\nTEST-EDGE-FAILURE"]
+    end
+  ```
+
 
 ## 2. 프로젝트 구조
 

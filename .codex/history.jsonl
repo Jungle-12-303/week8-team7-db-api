@@ -1,1 +1,4 @@
 {"timestamp":"2026-04-22T00:00:00+09:00","scope":"root","actor":"codex","summary":"Initialized project-local Codex log structure for PLAN-centered documentation workflow.","source":"manual-setup"}
+{"timestamp":"2026-04-22T23:51:35+09:00","scope":"root","actor":"codex","summary":"Verified .codex write path with elevated host permissions","source":"manual"}
+{"timestamp":"2026-04-23T00:00:00+09:00","scope":"root","actor":"codex","summary":"Refreshed root agent/work/PLAN/error docs to match current HTTP/runtime/lock logging state and remaining open issues.","source":"manual"}
+{"timestamp":"2026-04-23T00:00:00+09:00","scope":"root","actor":"codex","summary":"Aligned root docs and TEST-CONCURRENCY/work.md so unimplemented INSERT overlap demo remains a work item rather than a committed test asset.","source":"manual"}

@@ -4,10 +4,11 @@
 - 현재 진행중인 로컬 작업 없음
 
 ## 업데이트 필요
-- 현재 기록된 로컬 후속 작업 없음
+- `INSERT` 요청도 `X-Debug-Sleep-Ms` 기반 overlap 시연이 필요하면 `debug_sleep_overlap_insert.json` 같은 별도 케이스를 추가할 것
+- 위 케이스를 추가할 때는 `phase_has_overlap`, `start_spread_at_most`, verification 조회까지 함께 설계해 러너 출력만으로 설명 가능하게 맞출 것
 
 ## 완료
-- 2026-04-22 KST
+- 2026-04-23 KST
   - live `debug_sleep_overlap_select` 재검증에서 `start_spread_at_most` assertion 포함 PASS를 확인함
   - `run_concurrency_case.py` 출력에 phase별 `start_spread_ms`, `overlap_window_ms`, `concurrency_confirmed`, 요청별 상대 시각, START/END timeline을 추가함
   - `debug_sleep_overlap_select.json`에 `start_spread_at_most` assertion을 추가해 "거의 동시에 START" 기준을 결과에 직접 드러내도록 보강함

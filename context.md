@@ -12,7 +12,10 @@
 - 루트는 컨트롤 타워 역할만 하고, 세부 구현은 필요 시 하위 폴더에서 분리한다.
 - `Dockerfile`, `docker-compose.yml`, `.dockerignore`, `Makefile`은 루트 소유다.
 - HTTP 프로토콜은 `/health`, `/query`를 최소 엔드포인트로 시작한다.
-- 원본 로그는 `.codex/`, 요약과 핸드오프는 `context.md`에 남긴다.
+- `context.md`는 최신 상태 요약과 핸드오프만 남긴다.
+- `.codex/history.jsonl`은 중요한 이벤트를 append하는 로컬 이벤트 로그로 본다.
+- `.codex/sessions/`는 필요할 때만 쓰는 수동 세션 메모 저장소로 본다.
+- `.codex`는 별도 자동화가 없는 한 자동 기록 기능이 아니라 수동 운영 로그 구조로 본다.
 
 ## 최근 작업 메모
 - 2026-04-22 KST

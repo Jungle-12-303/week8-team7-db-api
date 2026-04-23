@@ -2,7 +2,18 @@
 
 #include <ctype.h>
 #include <stddef.h>
+#include <stdio.h>
 #include <string.h>
+
+int concurrency_thread_pool_current_worker_index(void);
+
+#if defined(_WIN32)
+#define LOCK_LOG_FLOCKFILE(stream) ((void)(stream))
+#define LOCK_LOG_FUNLOCKFILE(stream) ((void)(stream))
+#else
+#define LOCK_LOG_FLOCKFILE(stream) flockfile(stream)
+#define LOCK_LOG_FUNLOCKFILE(stream) funlockfile(stream)
+#endif
 
 static ConcurrencyLockMode effective_lock_mode(
     const ConcurrencyLockManager *manager,
@@ -57,6 +68,24 @@ static const char *skip_leading_sql_noise(const char *sql) {
     } while (skipped);
 
     return sql;
+}
+
+static void log_lock_event(const ConcurrencyLockManager *manager,
+                           const char *event,
+                           ConcurrencyLockMode requested_mode,
+                           ConcurrencyLockMode effective_mode) {
+    LOCK_LOG_FLOCKFILE(stdout);
+    fprintf(stdout,
+            "[LOCK] | event=%s | worker=%d | requested=%s | effective=%s | active_readers=%zu | waiting_writers=%zu | writer_active=%d |\n",
+            event,
+            concurrency_thread_pool_current_worker_index(),
+            concurrency_lock_mode_name(requested_mode),
+            concurrency_lock_mode_name(effective_mode),
+            manager == NULL ? 0u : manager->active_readers,
+            manager == NULL ? 0u : manager->waiting_writers,
+            manager == NULL ? 0 : manager->writer_active);
+    LOCK_LOG_FUNLOCKFILE(stdout);
+    fflush(stdout);
 }
 
 int concurrency_lock_manager_init(ConcurrencyLockManager *manager, ConcurrencyLockPolicy policy) {
@@ -115,21 +144,25 @@ void concurrency_lock_manager_acquire(ConcurrencyLockManager *manager, Concurren
 
     if (effective_mode == CONCURRENCY_LOCK_MODE_READ) {
         while (manager->writer_active || manager->waiting_writers > 0) {
+            log_lock_event(manager, "락 대기", mode, effective_mode);
             pthread_cond_wait(&manager->readers_cv, &manager->mutex);
         }
 
         manager->active_readers++;
+        log_lock_event(manager, "락 획득", mode, effective_mode);
         pthread_mutex_unlock(&manager->mutex);
         return;
     }
 
     manager->waiting_writers++;
     while (manager->writer_active || manager->active_readers > 0) {
+        log_lock_event(manager, "락 대기", mode, effective_mode);
         pthread_cond_wait(&manager->writers_cv, &manager->mutex);
     }
 
     manager->waiting_writers--;
     manager->writer_active = 1;
+    log_lock_event(manager, "락 획득", mode, effective_mode);
     pthread_mutex_unlock(&manager->mutex);
 }
 
@@ -152,6 +185,8 @@ void concurrency_lock_manager_release(ConcurrencyLockManager *manager, Concurren
             manager->active_readers--;
         }
 
+        log_lock_event(manager, "락 해제", mode, effective_mode);
+
         if (manager->active_readers == 0) {
             if (manager->waiting_writers > 0) {
                 pthread_cond_signal(&manager->writers_cv);
@@ -165,6 +200,7 @@ void concurrency_lock_manager_release(ConcurrencyLockManager *manager, Concurren
     }
 
     manager->writer_active = 0;
+    log_lock_event(manager, "락 해제", mode, effective_mode);
     if (manager->waiting_writers > 0) {
         pthread_cond_signal(&manager->writers_cv);
     } else {

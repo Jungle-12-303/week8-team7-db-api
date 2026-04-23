@@ -1,0 +1,375 @@
+{
+  "name": "debug-sleep-overlap-insert",
+  "description": "X-Debug-Sleep-Ms 지연이 INSERT 요청 수용 단계에서 겹치는지 확인하고 후행 조회로 결과 일관성을 검증한다.",
+  "target": {
+    "base_url_env": "DB_SERVER_URL",
+    "health_path": "/health",
+    "query_path": "/query",
+    "headers": {
+      "Content-Type": "text/plain; charset=utf-8"
+    },
+    "body_template": "{{sql}}"
+  },
+  "phases": [
+    {
+      "name": "sequential-debug-insert",
+      "mode": "sequential",
+      "requests": [
+        {
+          "name": "sleep-insert-seq-0",
+          "headers": {
+            "X-Debug-Sleep-Ms": "500"
+          },
+          "sql": "INSERT INTO student (department, student_number, name, age) VALUES ('qa_dbg_seq', 940100, 'tc_dbg_seq_{{run_id}}_0', 50);",
+          "expect": {
+            "status": 200,
+            "json_equals": [
+              {
+                "path": "ok",
+                "equals": true
+              },
+              {
+                "path": "affected_rows",
+                "equals": 1
+              }
+            ],
+            "json_string_contains": [
+              {
+                "path": "message",
+                "substring": "INSERT 1"
+              }
+            ]
+          }
+        },
+        {
+          "name": "sleep-insert-seq-1",
+          "headers": {
+            "X-Debug-Sleep-Ms": "500"
+          },
+          "sql": "INSERT INTO student (department, student_number, name, age) VALUES ('qa_dbg_seq', 940101, 'tc_dbg_seq_{{run_id}}_1', 51);",
+          "expect": {
+            "status": 200,
+            "json_equals": [
+              {
+                "path": "ok",
+                "equals": true
+              },
+              {
+                "path": "affected_rows",
+                "equals": 1
+              }
+            ],
+            "json_string_contains": [
+              {
+                "path": "message",
+                "substring": "INSERT 1"
+              }
+            ]
+          }
+        },
+        {
+          "name": "sleep-insert-seq-2",
+          "headers": {
+            "X-Debug-Sleep-Ms": "500"
+          },
+          "sql": "INSERT INTO student (department, student_number, name, age) VALUES ('qa_dbg_seq', 940102, 'tc_dbg_seq_{{run_id}}_2', 52);",
+          "expect": {
+            "status": 200,
+            "json_equals": [
+              {
+                "path": "ok",
+                "equals": true
+              },
+              {
+                "path": "affected_rows",
+                "equals": 1
+              }
+            ],
+            "json_string_contains": [
+              {
+                "path": "message",
+                "substring": "INSERT 1"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "concurrent-debug-insert",
+      "mode": "concurrent",
+      "max_workers": 3,
+      "requests": [
+        {
+          "name": "sleep-insert-con-0",
+          "headers": {
+            "X-Debug-Sleep-Ms": "500"
+          },
+          "sql": "INSERT INTO student (department, student_number, name, age) VALUES ('qa_dbg_con', 950100, 'tc_dbg_con_{{run_id}}_0', 60);",
+          "expect": {
+            "status": 200,
+            "json_equals": [
+              {
+                "path": "ok",
+                "equals": true
+              },
+              {
+                "path": "affected_rows",
+                "equals": 1
+              }
+            ],
+            "json_string_contains": [
+              {
+                "path": "message",
+                "substring": "INSERT 1"
+              }
+            ]
+          }
+        },
+        {
+          "name": "sleep-insert-con-1",
+          "headers": {
+            "X-Debug-Sleep-Ms": "500"
+          },
+          "sql": "INSERT INTO student (department, student_number, name, age) VALUES ('qa_dbg_con', 950101, 'tc_dbg_con_{{run_id}}_1', 61);",
+          "expect": {
+            "status": 200,
+            "json_equals": [
+              {
+                "path": "ok",
+                "equals": true
+              },
+              {
+                "path": "affected_rows",
+                "equals": 1
+              }
+            ],
+            "json_string_contains": [
+              {
+                "path": "message",
+                "substring": "INSERT 1"
+              }
+            ]
+          }
+        },
+        {
+          "name": "sleep-insert-con-2",
+          "headers": {
+            "X-Debug-Sleep-Ms": "500"
+          },
+          "sql": "INSERT INTO student (department, student_number, name, age) VALUES ('qa_dbg_con', 950102, 'tc_dbg_con_{{run_id}}_2', 62);",
+          "expect": {
+            "status": 200,
+            "json_equals": [
+              {
+                "path": "ok",
+                "equals": true
+              },
+              {
+                "path": "affected_rows",
+                "equals": 1
+              }
+            ],
+            "json_string_contains": [
+              {
+                "path": "message",
+                "substring": "INSERT 1"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "verification",
+      "mode": "sequential",
+      "requests": [
+        {
+          "name": "verify-dbg-seq-0",
+          "sql": "SELECT name FROM student WHERE name = 'tc_dbg_seq_{{run_id}}_0';",
+          "expect": {
+            "status": 200,
+            "json_equals": [
+              {
+                "path": "ok",
+                "equals": true
+              }
+            ],
+            "json_string_contains": [
+              {
+                "path": "output_text",
+                "substring": "tc_dbg_seq_{{run_id}}_0"
+              }
+            ],
+            "json_string_occurrence_counts": [
+              {
+                "path": "output_text",
+                "substring": "tc_dbg_seq_{{run_id}}_0",
+                "equals": 1
+              }
+            ]
+          }
+        },
+        {
+          "name": "verify-dbg-seq-1",
+          "sql": "SELECT name FROM student WHERE name = 'tc_dbg_seq_{{run_id}}_1';",
+          "expect": {
+            "status": 200,
+            "json_equals": [
+              {
+                "path": "ok",
+                "equals": true
+              }
+            ],
+            "json_string_contains": [
+              {
+                "path": "output_text",
+                "substring": "tc_dbg_seq_{{run_id}}_1"
+              }
+            ],
+            "json_string_occurrence_counts": [
+              {
+                "path": "output_text",
+                "substring": "tc_dbg_seq_{{run_id}}_1",
+                "equals": 1
+              }
+            ]
+          }
+        },
+        {
+          "name": "verify-dbg-seq-2",
+          "sql": "SELECT name FROM student WHERE name = 'tc_dbg_seq_{{run_id}}_2';",
+          "expect": {
+            "status": 200,
+            "json_equals": [
+              {
+                "path": "ok",
+                "equals": true
+              }
+            ],
+            "json_string_contains": [
+              {
+                "path": "output_text",
+                "substring": "tc_dbg_seq_{{run_id}}_2"
+              }
+            ],
+            "json_string_occurrence_counts": [
+              {
+                "path": "output_text",
+                "substring": "tc_dbg_seq_{{run_id}}_2",
+                "equals": 1
+              }
+            ]
+          }
+        },
+        {
+          "name": "verify-dbg-con-0",
+          "sql": "SELECT name FROM student WHERE name = 'tc_dbg_con_{{run_id}}_0';",
+          "expect": {
+            "status": 200,
+            "json_equals": [
+              {
+                "path": "ok",
+                "equals": true
+              }
+            ],
+            "json_string_contains": [
+              {
+                "path": "output_text",
+                "substring": "tc_dbg_con_{{run_id}}_0"
+              }
+            ],
+            "json_string_occurrence_counts": [
+              {
+                "path": "output_text",
+                "substring": "tc_dbg_con_{{run_id}}_0",
+                "equals": 1
+              }
+            ]
+          }
+        },
+        {
+          "name": "verify-dbg-con-1",
+          "sql": "SELECT name FROM student WHERE name = 'tc_dbg_con_{{run_id}}_1';",
+          "expect": {
+            "status": 200,
+            "json_equals": [
+              {
+                "path": "ok",
+                "equals": true
+              }
+            ],
+            "json_string_contains": [
+              {
+                "path": "output_text",
+                "substring": "tc_dbg_con_{{run_id}}_1"
+              }
+            ],
+            "json_string_occurrence_counts": [
+              {
+                "path": "output_text",
+                "substring": "tc_dbg_con_{{run_id}}_1",
+                "equals": 1
+              }
+            ]
+          }
+        },
+        {
+          "name": "verify-dbg-con-2",
+          "sql": "SELECT name FROM student WHERE name = 'tc_dbg_con_{{run_id}}_2';",
+          "expect": {
+            "status": 200,
+            "json_equals": [
+              {
+                "path": "ok",
+                "equals": true
+              }
+            ],
+            "json_string_contains": [
+              {
+                "path": "output_text",
+                "substring": "tc_dbg_con_{{run_id}}_2"
+              }
+            ],
+            "json_string_occurrence_counts": [
+              {
+                "path": "output_text",
+                "substring": "tc_dbg_con_{{run_id}}_2",
+                "equals": 1
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ],
+  "assertions": [
+    {
+      "type": "phase_requests_success",
+      "phase": "sequential-debug-insert"
+    },
+    {
+      "type": "phase_requests_success",
+      "phase": "concurrent-debug-insert"
+    },
+    {
+      "type": "phase_has_overlap",
+      "phase": "concurrent-debug-insert"
+    },
+    {
+      "type": "start_spread_at_most",
+      "phase": "concurrent-debug-insert",
+      "max_start_spread_ms": 150.0
+    },
+    {
+      "type": "concurrent_shorter_or_overlap",
+      "phase": "concurrent-debug-insert",
+      "baseline": "sequential-debug-insert",
+      "max_ratio": 0.9
+    },
+    {
+      "type": "phase_requests_success",
+      "phase": "verification"
+    }
+  ]
+}

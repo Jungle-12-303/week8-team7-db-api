@@ -4,9 +4,11 @@
 #include "week8_engine.h"
 
 #include <errno.h>
+#include <inttypes.h>
 #include <limits.h>
 #include <netinet/in.h>
 #include <signal.h>
+#include <stdatomic.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -27,9 +29,62 @@
 typedef struct {
     DbServerRuntime *runtime;
     int client_fd;
+    http_request_trace trace;
 } DbServerClientJob;
 
 static DbServerRuntime *g_signal_runtime = NULL;
+static atomic_ullong g_runtime_request_sequence = 0;
+
+static uint64_t runtime_next_request_id(void)
+{
+    return (uint64_t)atomic_fetch_add_explicit(&g_runtime_request_sequence, 1u, memory_order_relaxed) + 1u;
+}
+
+static void runtime_log_event(const http_request_trace *trace,
+                              const char *event,
+                              int worker_index,
+                              const char *result,
+                              int run_status)
+{
+    const char *method = "-";
+    const char *path = "-";
+    const char *status_text = "-";
+    const char *result_text = "-";
+    char status_buffer[16];
+    uint64_t req_id = 0;
+
+    if (trace != NULL) {
+        req_id = trace->req_id;
+        if (trace->method[0] != '\0') {
+            method = trace->method;
+        }
+        if (trace->path[0] != '\0') {
+            path = trace->path;
+        }
+        if (trace->status_code > 0) {
+            snprintf(status_buffer, sizeof(status_buffer), "%d", trace->status_code);
+            status_text = status_buffer;
+        }
+    }
+
+    if (result != NULL && result[0] != '\0') {
+        result_text = result;
+    }
+
+    flockfile(stdout);
+    fprintf(stdout,
+            "[RUNTIME] | req_id=%" PRIu64 " | event=%s | thread=%d | method=%s | path=%s | status=%s | result=%s | run_status=%d |\n",
+            req_id,
+            event,
+            worker_index,
+            method,
+            path,
+            status_text,
+            result_text,
+            run_status);
+    funlockfile(stdout);
+    fflush(stdout);
+}
 
 static void close_fd_if_open(int *fd)
 {
@@ -266,8 +321,45 @@ static int run_client_job(void *context)
 
     client_fd = job->client_fd;
     job->client_fd = -1;
-    success = http_server_handle_client(client_fd, &job->runtime->http_config, &job->runtime->http_dependencies);
+    success = http_server_handle_client(
+        client_fd,
+        &job->runtime->http_config,
+        &job->runtime->http_dependencies,
+        &job->trace
+    );
     return success ? 0 : 1;
+}
+
+static void assign_client_job(void *context, int worker_index)
+{
+    DbServerClientJob *job = (DbServerClientJob *)context;
+
+    if (job == NULL) {
+        return;
+    }
+
+    job->trace.worker_index = worker_index;
+    runtime_log_event(&job->trace, "스레드 할당", worker_index, NULL, 0);
+}
+
+static void notify_client_job(void *context,
+                              ConcurrencyJobResult result,
+                              int worker_index,
+                              int run_status)
+{
+    DbServerClientJob *job = (DbServerClientJob *)context;
+
+    if (job == NULL) {
+        return;
+    }
+
+    runtime_log_event(
+        &job->trace,
+        "작업 종료",
+        worker_index,
+        concurrency_job_result_name(result),
+        run_status
+    );
 }
 
 static void cleanup_client_job(void *context)
@@ -336,10 +428,14 @@ static void accept_client(DbServerRuntime *runtime, int client_fd)
 
     job_context->runtime = runtime;
     job_context->client_fd = client_fd;
+    http_request_trace_init(&job_context->trace);
+    job_context->trace.req_id = runtime_next_request_id();
 
     memset(&job, 0, sizeof(job));
     job.lock_mode = CONCURRENCY_LOCK_MODE_NONE;
+    job.assigned = assign_client_job;
     job.run = run_client_job;
+    job.notify = notify_client_job;
     job.cleanup = cleanup_client_job;
     job.context = job_context;
 
@@ -349,6 +445,7 @@ static void accept_client(DbServerRuntime *runtime, int client_fd)
     }
 
     reject_client_with_status(client_fd, status);
+    job_context->client_fd = -1;
     concurrency_job_finish(&job, CONCURRENCY_JOB_RESULT_REJECTED, -1, 0);
 }
 

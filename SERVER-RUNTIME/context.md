@@ -7,6 +7,8 @@
 - 기본 `schema/data` 경로는 repo root 기준 `week8-team7-db-api/schema`, `week8-team7-db-api/data`로 연결한다.
 - `db_server_runtime.c` 기준으로 실제 listener, worker pool, HTTP/core wiring이 연결됐다.
 - 루트 Docker 경로로 Linux 컨테이너에서 실행 가능하다.
+- runtime job context는 현재 per-request `http_request_trace`를 들고 다니며 `스레드 할당`, `작업 종료` 로그를 req_id 기준으로 남긴다.
+- Docker live runtime 기준 동시성 4케이스 재실행 PASS와 `[HTTP]`, `[RUNTIME]`, `[LOCK]` 로그 포맷 확인을 마쳤다.
 
 ## 다음 작업
 - graceful shutdown 제어면과 live test 연결을 확장한다.

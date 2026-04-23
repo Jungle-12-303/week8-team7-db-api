@@ -39,6 +39,11 @@ docker compose run --rm dev bash -lc "python3 TEST-CONCURRENCY/scripts/run_concu
 - `mixed_select_insert_student.json`: `SELECT + INSERT` 혼합 요청 후 삽입 결과 확인
 - `debug_sleep_overlap_select.json`: `X-Debug-Sleep-Ms`를 사용해 API 계층 overlap과 `max_parallel > 1` 시연
 
+참고:
+
+- `INSERT` 전용 `X-Debug-Sleep-Ms` overlap 케이스는 아직 공식 테스트 자산으로 추가하지 않았습니다.
+- 필요하면 [TEST-CONCURRENCY/work.md](/C:/Users/gi676/OneDrive/바탕 화면/dddddddd/TEST-CONCURRENCY/work.md:1)의 `업데이트 필요` 항목 기준으로 후속 추가합니다.
+
 ## 3. 개별 케이스 실행
 
 `SELECT` 케이스만 실행:
@@ -159,7 +164,7 @@ SELECT name FROM student WHERE id = 1;
 ### 한 줄 `curl`
 
 ```powershell
-curl -H "Content-Type: text/plain; charset=utf-8" -H "X-Debug-Sleep-Ms: 3000" --data "SELECT name FROM student WHERE id = 1;" http://localhost:8080/query
+curl -H "Content-Type: text/plain; charset=utf-8" -H "X-Debug-Sleep-Ms: 3000" --data-binary "SELECT name FROM student WHERE id = 1;" http://localhost:8080/query
 ```
 
 ### 시연 절차
@@ -196,7 +201,7 @@ docker compose logs -f server
 
 ## 10. 로그 확인
 
-현재 구현된 HTTP 요청 추적 로그는 `stdout`으로 남습니다.
+현재 구현된 요청 추적/런타임/락 로그는 `stdout`으로 남습니다.
 Docker 기준 확인 명령은 다음과 같습니다.
 
 ```powershell
@@ -208,9 +213,17 @@ docker compose logs --no-color --tail 50 server
 ```text
 [HTTP] | req_id=12 | event=요청 수신 | method=POST | path=/query | ...
 [HTTP] | req_id=12 | event=응답 완료 | method=POST | path=/query | status=200 | ...
+[RUNTIME] | req_id=12 | event=스레드 할당 | thread=0 | ...
+[RUNTIME] | req_id=12 | event=작업 종료 | thread=0 | result=ok | ...
+[LOCK] | event=락 획득 | worker=0 | requested=read | effective=write | active_readers=0 | waiting_writers=0 | writer_active=1 |
+[LOCK] | event=락 해제 | worker=0 | requested=read | effective=write | active_readers=0 | waiting_writers=0 | writer_active=0 |
 ```
 
-DB 작업 시작/종료, 락 대기/획득/해제, 종료 요약 로그는 아직 후속 작업입니다.
+현재 로그에서 아직 없는 것은 아래입니다.
+
+- `DB 작업 시작`
+- `DB 작업 종료`
+- shutdown 요약 로그
 
 ## 11. 종료
 

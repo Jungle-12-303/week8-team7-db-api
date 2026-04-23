@@ -15,3 +15,4 @@
 - concurrent phase 결과에는 `start_spread_ms`, `overlap_window_ms`, `concurrency_confirmed`, START/END timeline이 함께 출력된다.
 - 직렬 `INSERT` 판정은 wall-clock 비율과 후행 조회 일관성으로 확인한다.
 - `X-Debug-Sleep-Ms` 같은 요청 헤더도 케이스별 `headers`로 직접 지정할 수 있다.
+- debug sleep 기반 `INSERT` 케이스는 overlap 시연과 별도로 verification 조회까지 포함해 write 결과 일관성을 같이 확인한다.

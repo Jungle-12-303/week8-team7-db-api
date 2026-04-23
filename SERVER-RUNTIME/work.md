@@ -9,9 +9,9 @@
 - Docker 기준 live 검증 결과 누적
   Windows 호스트에서 `build/bin/db_server`는 직접 실행되지 않으므로 `docker compose` 기준으로 `TEST-HTTP-FUNCTIONAL`, `TEST-CONCURRENCY` 러너 결과를 다시 기록할 것
 - 요청 단위 trace 계약 연동
-  `req_id`, method, path, op, worker, status, lock_mode, 요청/DB/응답 시각을 런타임 로그에 남기려면 `SERVER-HTTP`가 parse 완료와 최종 status callback을 노출하도록 경계를 맞출 것
+  `req_id`, method, path, op, worker, status`는 현재 연동되었고, `lock_mode`, 요청/DB/응답 시각은 후속 로그 확장에서 보강할 것
 - 실시간 요청 로그 포맷 고정
-  `요청 수신`, `DB 작업 시작`, `DB 작업 종료`, `응답 완료`를 req_id 기준 표 형식 한 줄 로그로 출력하도록 필드 순서와 문자열 포맷을 확정할 것
+  `요청 수신`, `스레드 할당`, `작업 종료`, `락 대기/획득/해제`, `응답 완료`는 현재 고정 형식으로 보이고, `DB 작업 시작/종료`는 후속 추가
 - 종료 요약 로그 추가
   shutdown 시점에 total/success/fail, op별 건수, 평균/최대 total_ms, db_ms 같은 요약 표를 출력할 것
 - 로그 출력 직렬화 추가
@@ -27,3 +27,6 @@
   - `server_runtime/runtime_config.h`, `server_runtime/server_main.h` 공개 인터페이스를 추가함
   - CLI/env 기반 포트, worker, repo root, schema/data 경로 로더를 구현함
   - `run-server.sh`, `smoke-health.sh` 런타임 보조 스크립트를 추가함
+  - per-request `http_request_trace`를 job context에 연결하고 `assigned`/`notify` 콜백으로 `[RUNTIME] | event=스레드 할당|작업 종료 | ...` 로그를 출력하도록 반영함
+  - rejection 경로에서 이미 닫힌 client fd를 cleanup이 다시 닫지 않도록 double-close 위험을 제거함
+  - Docker live runtime 기준 `TEST-CONCURRENCY` 4개 케이스를 재실행해 PASS와 로그 출력을 함께 확인함

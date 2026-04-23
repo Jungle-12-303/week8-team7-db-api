@@ -6,7 +6,7 @@
 
 ## 업데이트 필요
 - `SERVER-RUNTIME` live 환경에서 overload/shutdown rejection 응답과 로그를 한 번 더 캡처해 edge failure 기대값을 고정
-- stdout 캡처 검증이 붙으면 req_id, `status=<code>`, `debug_sleep_ms=<value>` 필드를 테스트 기대값에 반영
+- stdout 캡처 검증이 붙으면 req_id, `thread=<worker_index>`, `status=<code>`, `debug_sleep_ms=<value>` 필드를 테스트 기대값에 반영
 
 ## 완료
 - 2026-04-22 KST
@@ -17,6 +17,9 @@
   - `X-Debug-Sleep-Ms` 범위를 `0~10000ms`로 제한하고, 잘못된 값은 `400 invalid_header`로 응답하도록 정리했다.
   - request parse 직후 `요청 수신`, route 처리 후 `응답 완료`를 req_id 기준 한 줄 로그로 남기도록 `http_server_handle_client()`를 정리했다.
   - `http_route_request()` 경로의 최종 HTTP status code를 바깥으로 전달하도록 정리해 응답 완료 로그에 `status=<code>`가 남도록 반영했다.
+  - per-request `http_request_trace` 구조체를 추가해 `req_id`, method, path, status, worker를 runtime job context와 공유할 수 있게 했다.
+  - `[HTTP]` 로그에 `thread=<worker_index>` 필드를 추가해 같은 req_id 흐름에서 worker 식별자를 볼 수 있게 했다.
+  - `http_server_handle_client(..., trace)` 경계로 runtime이 미리 할당한 req_id를 이어받고 최종 status를 trace에 되돌려주도록 정리했다.
   - `TEST-HTTP-FUNCTIONAL` 쪽 `X-Debug-Sleep-Ms` 유효/무효 케이스와 README 계약이 현재 구현 기준으로 정렬된 상태를 확인했다.
   - `TEST-EDGE-FAILURE` 쪽 overload 상태 코드 케이스가 `503` 기준으로 정렬된 상태를 확인했다.
   - Docker 컨테이너에서 `make clean && make server` 컴파일을 통과시켜 `SERVER-HTTP` 변경분을 확인했다.
